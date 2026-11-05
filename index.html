@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="el">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+  <title>Rooting</title>
+  <meta name="description" content="Βέλτιστη σειρά για τις διευθύνσεις των δρομολογίων σου">
+  <meta name="theme-color" content="#2563eb">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Rooting">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <div id="map"></div>
+    <button id="btnLocate" class="map-fab" title="Η θέση μου" aria-label="Η θέση μου">◎</button>
+    <button id="btnSettings" class="map-fab map-fab-top" title="Ρυθμίσεις" aria-label="Ρυθμίσεις">⚙︎</button>
+
+    <section id="panel">
+      <div class="grabber"></div>
+
+      <!-- Επόμενη στάση (εμφανίζεται μετά τη βελτιστοποίηση) -->
+      <div id="nextCard" class="card next-card hidden">
+        <div class="next-label">Επόμενη στάση <span id="nextIdx"></span></div>
+        <div id="nextTitle" class="next-title"></div>
+        <div id="nextSub" class="next-sub"></div>
+        <div class="next-actions">
+          <a id="btnNavNext" class="btn btn-primary btn-lg" target="_blank" rel="noopener">➤ Πλοήγηση</a>
+          <button id="btnDoneNext" class="btn btn-success btn-lg">✓ Παραδόθηκε</button>
+        </div>
+        <button id="btnSkipNext" class="btn btn-link">Παράλειψη για αργότερα</button>
+      </div>
+
+      <div id="summary" class="summary hidden"></div>
+
+      <!-- Αναζήτηση -->
+      <div class="search-wrap">
+        <input id="search" type="search" placeholder="Πρόσθεσε διεύθυνση…" autocomplete="off" enterkeyhint="search">
+        <ul id="suggestions" class="suggestions hidden"></ul>
+      </div>
+      <div class="row-btns">
+        <button id="btnPaste" class="btn btn-ghost">📋 Λίστα διευθύνσεων</button>
+        <button id="btnClear" class="btn btn-ghost">🗑 Καθαρισμός</button>
+      </div>
+
+      <!-- Αφετηρία / Τέλος -->
+      <div class="card endpoints">
+        <button id="startRow" class="endpoint">
+          <span class="dot dot-start"></span>
+          <span class="ep-text"><small>Αφετηρία</small><span id="startLabel">📍 Τρέχουσα τοποθεσία</span></span>
+          <span class="chev">›</span>
+        </button>
+        <button id="endRow" class="endpoint">
+          <span class="dot dot-end"></span>
+          <span class="ep-text"><small>Τέλος</small><span id="endLabel">Όπου τελειώσει η τελευταία στάση</span></span>
+          <span class="chev">›</span>
+        </button>
+      </div>
+
+      <div class="list-head">
+        <h2>Στάσεις <span id="stopCount" class="badge">0</span></h2>
+        <span id="doneCount" class="muted"></span>
+      </div>
+      <ol id="stops" class="stops"></ol>
+      <p id="emptyHint" class="empty">Πρόσθεσε τις διευθύνσεις σου από πάνω, επικόλλησε μια λίστα, ή πάτα παρατεταμένα πάνω στον χάρτη.</p>
+
+      <div class="bottom-spacer"></div>
+    </section>
+
+    <div id="optimizeBar">
+      <button id="btnOptimize" class="btn btn-primary btn-block btn-lg">⚡ Βελτιστοποίηση διαδρομής</button>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-sheet">
+      <div class="modal-head">
+        <h3 id="modalTitle"></h3>
+        <button class="icon-btn" data-close aria-label="Κλείσιμο">✕</button>
+      </div>
+      <div id="modalBody" class="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <div id="busy" class="busy hidden"><div class="spinner"></div><div id="busyText">Υπολογισμός…</div></div>
+
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="solver.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
