@@ -20,7 +20,7 @@
     if (!workerP) {
       workerP = (async () => {
         if (!global.Tesseract) await loadScript(BASE + 'tesseract.min.js');
-        return global.Tesseract.createWorker('ell', 1, {
+        return global.Tesseract.createWorker(['ell', 'eng'], 1, {
           workerPath: BASE + 'worker.min.js',
           corePath: BASE + 'core',
           langPath: BASE + 'lang',
