@@ -40,9 +40,9 @@
 
   // ---------- Χάρτης ----------
   const map = L.map('map', { zoomControl: false, attributionControl: true }).setView([37.9838, 23.7275], 12);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-    maxZoom: 19, subdomains: 'abcd',
-    attribution: '&copy; OpenStreetMap &copy; CARTO'
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
   const layerMarkers = L.layerGroup().addTo(map);
   let routeLine = null;
@@ -655,7 +655,7 @@
         <input id="sSvc" type="number" min="0" max="120" inputmode="numeric" value="${S.settings.serviceMin}"></label>
       ${g ? `<a class="btn btn-ghost btn-block" href="${esc(g)}" target="_blank" rel="noopener">🌐 Όλη η διαδρομή στο Google Maps (μέσω browser)</a><p class="muted small">Χρησιμοποίησέ το μόνο αν δεν ανοίγει η εφαρμογή Google Maps.</p>` : ''}
       <button class="btn btn-ghost btn-block" id="sExport">⬇︎ Εξαγωγή στάσεων (κείμενο)</button>
-      <p class="muted small">Χάρτες: © OpenStreetMap contributors, CARTO. Δρομολόγηση: OSRM. Αναζήτηση: Photon / Nominatim.<br>Τα δεδομένα σου αποθηκεύονται μόνο σε αυτό το κινητό.</p>`, (b) => {
+      <p class="muted small">Χάρτες: © OpenStreetMap contributors. Δρομολόγηση: OSRM. Αναζήτηση: Photon / Nominatim.<br>Τα δεδομένα σου αποθηκεύονται μόνο σε αυτό το κινητό.</p>`, (b) => {
       const sel = b.querySelector('#sNav');
       sel.value = S.settings.navApp;
       sel.onchange = () => { S.settings.navApp = sel.value; save(); render(); };
