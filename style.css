@@ -165,3 +165,24 @@ textarea { resize: vertical; margin-bottom: 10px; }
 
 .leaflet-control-attribution { font-size: 10px; margin-bottom: 18px !important; }
 .leaflet-popup-content .btn { min-height: 36px; padding: 6px 12px; }
+
+/* Google Maps / οδήγηση */
+.gm-btn { margin-top: 8px; margin-bottom: 8px; }
+.btn-dark { background: #111827; color: #fff; }
+.drive { position: fixed; inset: 0; z-index: 1050; background: #0b0f17; color: #f3f4f6; display: flex; flex-direction: column;
+  padding: calc(var(--safe-top) + 10px) 16px calc(var(--safe-bottom) + 16px); overflow-y: auto; }
+.d-head { display: flex; justify-content: space-between; align-items: center; color: #9ca3af; font-weight: 600; }
+.d-close { background: #1f2937; color: #f3f4f6; border-color: #374151; min-height: 40px; }
+.d-body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 12px; }
+.d-label { color: #f59e0b; font-weight: 700; font-size: 16px; }
+.d-title { font-size: 30px; font-weight: 800; line-height: 1.2; }
+.d-note { font-size: 18px; color: #d1d5db; }
+.d-call { background: #1f2937; color: #f3f4f6; border-color: #374151; font-size: 18px; }
+.d-big { min-height: 120px; font-size: 28px; flex-direction: column; border-radius: 20px; margin-top: 8px; }
+.d-big small { font-size: 15px; font-weight: 500; opacity: .9; }
+.d-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.d-mid { min-height: 70px; font-size: 18px; border-radius: 16px; }
+.drive .btn-ghost.d-mid { background: #1f2937; color: #f3f4f6; border-color: #374151; }
+.d-wide { width: 100%; }
+.drive .btn-link { color: #9ca3af; }
+.d-finish { text-align: center; font-size: 30px; font-weight: 800; }

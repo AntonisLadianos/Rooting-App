@@ -31,9 +31,11 @@
         <div id="nextTitle" class="next-title"></div>
         <div id="nextSub" class="next-sub"></div>
         <div class="next-actions">
-          <a id="btnNavNext" class="btn btn-primary btn-lg" target="_blank" rel="noopener">➤ Πλοήγηση</a>
+          <a id="btnNavNext" class="btn btn-primary btn-lg">➤ Πλοήγηση</a>
           <button id="btnDoneNext" class="btn btn-success btn-lg">✓ Παραδόθηκε</button>
         </div>
+        <a id="btnFullRoute" class="btn btn-ghost btn-block gm-btn">🗺 Όλη η διαδρομή στο Google Maps</a>
+        <button id="btnDrive" class="btn btn-dark btn-block btn-lg">🚗 Λειτουργία οδήγησης</button>
         <button id="btnSkipNext" class="btn btn-link">Παράλειψη για αργότερα</button>
       </div>
 
@@ -88,6 +90,15 @@
       </div>
       <div id="modalBody" class="modal-body"></div>
     </div>
+  </div>
+
+  <!-- Λειτουργία οδήγησης -->
+  <div id="drive" class="drive hidden">
+    <div class="d-head">
+      <span id="dProgress"></span>
+      <button id="dClose" class="btn btn-ghost d-close">✕ Έξοδος</button>
+    </div>
+    <div id="dBody" class="d-body"></div>
   </div>
 
   <div id="toast" class="toast hidden"></div>

@@ -15,7 +15,7 @@
     end: null,            // {label, lat, lng} όταν endMode = fixed
     stops: [],            // {id, label, lat, lng, note, phone, done, doneAt}
     route: null,          // {order:[ids], legs:[{duration,distance}], geometry, startedAt, origin, approx}
-    settings: { navApp: 'apple', serviceMin: 3 }
+    settings: { navApp: 'google', serviceMin: 3 }
   };
   let S = load();
   let myPos = null;
@@ -275,9 +275,14 @@
       if (nextStop.note) sub.push(nextStop.note);
       $('nextSub').textContent = sub.join(' · ');
       $('btnNavNext').href = navUrl(nextStop);
+      if (navUrl(nextStop).startsWith('http')) $('btnNavNext').target = '_blank'; else $('btnNavNext').removeAttribute('target');
       $('btnDoneNext').onclick = () => markDone(nextStop.id, true);
       $('btnSkipNext').onclick = () => skipStop(nextStop.id);
+      const n = nextChunk().length;
+      $('btnFullRoute').textContent = n > 1 ? `🗺 Όλη η διαδρομή στο Google Maps (${n} στάσεις)` : '🗺 Άνοιγμα στο Google Maps';
+      $('btnFullRoute').href = googleFullRouteUrl();
     } else card.classList.add('hidden');
+    if (driveOpen) renderDrive();
 
     // Σύνοψη
     const sum = $('summary');
@@ -333,21 +338,25 @@
   function navUrl(s) {
     const ll = `${s.lat},${s.lng}`;
     switch (S.settings.navApp) {
-      case 'google': return `https://www.google.com/maps/dir/?api=1&destination=${ll}&travelmode=driving`;
+      case 'google': return `comgooglemaps://?daddr=${ll}&directionsmode=driving`;
       case 'waze': return `https://waze.com/ul?ll=${ll}&navigate=yes`;
       default: return `https://maps.apple.com/?daddr=${ll}&dirflg=d`;
     }
   }
 
-  // Όλη η υπόλοιπη διαδρομή στο Google Maps (έως 9 ενδιάμεσες στάσεις)
-  function googleFullRouteUrl() {
-    const rest = orderedStops().filter((s) => !s.done);
-    if (!rest.length) return null;
-    const chunk = rest.slice(0, 10);
+  // Όλη η υπόλοιπη διαδρομή στο Google Maps (έως 10 στάσεις: 9 ενδιάμεσες + προορισμός)
+  const GM_CHUNK = 10;
+  function nextChunk() { return orderedStops().filter((s) => !s.done).slice(0, GM_CHUNK); }
+  function googleFullRouteUrl(web) {
+    const chunk = nextChunk();
+    if (!chunk.length) return null;
+    const ll = (s) => `${s.lat},${s.lng}`;
+    if (!web) return `comgooglemaps://?daddr=${chunk.map(ll).join('+to:')}&directionsmode=driving`;
     const dest = chunk[chunk.length - 1];
-    const wps = chunk.slice(0, -1).map((s) => `${s.lat},${s.lng}`).join('|');
-    return `https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${dest.lat},${dest.lng}` + (wps ? `&waypoints=${encodeURIComponent(wps)}` : '');
+    const wps = chunk.slice(0, -1).map(ll).join('|');
+    return `https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${ll(dest)}` + (wps ? `&waypoints=${encodeURIComponent(wps)}` : '');
   }
+  function openUrl(url) { window.location.href = url; }
 
   // ---------- Ενέργειες στάσεων ----------
   function markDone(id, val) {
@@ -415,7 +424,7 @@
     openModal('Στάση', `
       <p class="stop-full">${esc(s.label)}</p>
       <div class="grid2">
-        <a class="btn btn-primary" href="${esc(navUrl(s))}" target="_blank" rel="noopener">➤ Πλοήγηση</a>
+        <a class="btn btn-primary" href="${esc(navUrl(s))}"${navUrl(s).startsWith('http') ? ' target="_blank" rel="noopener"' : ''}>➤ Πλοήγηση</a>
         <button class="btn ${s.done ? 'btn-ghost' : 'btn-success'}" id="mDone">${s.done ? '↺ Αναίρεση' : '✓ Ολοκληρώθηκε'}</button>
       </div>
       <label class="field"><span>Σημείωση</span><input id="mNote" type="text" value="${esc(s.note)}" placeholder="π.χ. 3ος όροφος, κουδούνι Παπαδόπουλος"></label>
@@ -530,7 +539,7 @@
 
   // ---------- Ρυθμίσεις ----------
   $('btnSettings').onclick = () => {
-    const g = googleFullRouteUrl();
+    const g = googleFullRouteUrl(true);
     openModal('Ρυθμίσεις', `
       <label class="field"><span>Εφαρμογή πλοήγησης</span>
         <select id="sNav">
@@ -540,7 +549,7 @@
         </select></label>
       <label class="field"><span>Χρόνος σε κάθε στάση (λεπτά)</span>
         <input id="sSvc" type="number" min="0" max="120" inputmode="numeric" value="${S.settings.serviceMin}"></label>
-      ${g ? `<a class="btn btn-ghost btn-block" href="${esc(g)}" target="_blank" rel="noopener">🗺 Άνοιγμα των επόμενων 10 στάσεων στο Google Maps</a>` : ''}
+      ${g ? `<a class="btn btn-ghost btn-block" href="${esc(g)}" target="_blank" rel="noopener">🌐 Όλη η διαδρομή στο Google Maps (μέσω browser)</a><p class="muted small">Χρησιμοποίησέ το μόνο αν δεν ανοίγει η εφαρμογή Google Maps.</p>` : ''}
       <button class="btn btn-ghost btn-block" id="sExport">⬇︎ Εξαγωγή στάσεων (κείμενο)</button>
       <p class="muted small">Χάρτες: © OpenStreetMap contributors, CARTO. Δρομολόγηση: OSRM. Αναζήτηση: Photon / Nominatim.<br>Τα δεδομένα σου αποθηκεύονται μόνο σε αυτό το κινητό.</p>`, (b) => {
       const sel = b.querySelector('#sNav');
@@ -697,6 +706,62 @@
     $('busy').classList.toggle('hidden', !on);
     if (text) $('busyText').textContent = text;
   }
+
+
+  // ---------- Λειτουργία οδήγησης ----------
+  let driveOpen = false, wakeLock = null;
+  async function keepAwake(on) {
+    try {
+      if (on && 'wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
+      else if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
+    } catch (e) { /* δεν υποστηρίζεται */ }
+  }
+  document.addEventListener('visibilitychange', () => { if (driveOpen && document.visibilityState === 'visible') keepAwake(true); });
+
+  function openDrive() {
+    if (!S.route) { toast('Κάνε πρώτα βελτιστοποίηση διαδρομής'); return; }
+    driveOpen = true; $('drive').classList.remove('hidden'); keepAwake(true); renderDrive();
+  }
+  function closeDrive() { driveOpen = false; $('drive').classList.add('hidden'); keepAwake(false); }
+
+  function renderDrive() {
+    const list = orderedStops();
+    const next = list.find((s) => !s.done);
+    const etas = computeEtas(list);
+    const done = list.filter((s) => s.done).length;
+    $('dProgress').textContent = `${done}/${list.length} παραδόθηκαν`;
+    if (!next) {
+      $('dBody').innerHTML = `<div class="d-finish">🎉<br>Τελείωσες όλες τις στάσεις!</div>`;
+      return;
+    }
+    const idx = list.indexOf(next);
+    const after = list.slice(idx + 1).find((s) => !s.done);
+    const eta = etas[next.id];
+    const n = nextChunk().length;
+    $('dBody').innerHTML = `
+      <div class="d-label">Στάση ${idx + 1} από ${list.length}${eta ? ' · άφιξη ~' + fmtClock(eta.at) : ''}</div>
+      <div class="d-title">${esc(next.label)}</div>
+      ${next.note ? `<div class="d-note">📝 ${esc(next.note)}</div>` : ''}
+      ${next.phone ? `<a class="btn btn-ghost d-call" href="tel:${esc(next.phone.replace(/\s/g, ''))}">📞 ${esc(next.phone)}</a>` : ''}
+      <button class="btn btn-success d-big" id="dDoneGo">✓ Παραδόθηκε<small>${after ? 'και πλοήγηση στην επόμενη' : 'τελευταία στάση'}</small></button>
+      <div class="d-row">
+        <button class="btn btn-primary d-mid" id="dNav">➤ Πλοήγηση</button>
+        <button class="btn btn-ghost d-mid" id="dDoneOnly">✓ Μόνο παραδόθηκε</button>
+      </div>
+      <button class="btn btn-ghost d-mid d-wide" id="dFull">🗺 Όλη η διαδρομή στο Google Maps${n > 1 ? ` (${n} στάσεις)` : ''}</button>
+      <button class="btn btn-link" id="dSkip">Παράλειψη για αργότερα</button>`;
+    $('dNav').onclick = () => openUrl(navUrl(next));
+    $('dFull').onclick = () => openUrl(googleFullRouteUrl());
+    $('dDoneOnly').onclick = () => markDone(next.id, true);
+    $('dSkip').onclick = () => skipStop(next.id);
+    $('dDoneGo').onclick = () => {
+      markDone(next.id, true);
+      const nn = orderedStops().find((s) => !s.done);
+      if (nn) openUrl(navUrl(nn));
+    };
+  }
+  $('btnDrive').onclick = openDrive;
+  $('dClose').onclick = closeDrive;
 
   // ---------- Εκκίνηση ----------
   render();
