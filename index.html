@@ -46,6 +46,8 @@
         <input id="search" type="search" placeholder="Πρόσθεσε διεύθυνση…" autocomplete="off" enterkeyhint="search">
         <ul id="suggestions" class="suggestions hidden"></ul>
       </div>
+      <button id="btnShot" class="btn btn-primary btn-block shot-btn">📷 Διευθύνσεις από screenshot</button>
+      <input id="shotInput" type="file" accept="image/*" multiple hidden>
       <div class="row-btns">
         <button id="btnPaste" class="btn btn-ghost">📋 Λίστα διευθύνσεων</button>
         <button id="btnClear" class="btn btn-ghost">🗑 Καθαρισμός</button>
@@ -106,6 +108,7 @@
 
   <script src="vendor/leaflet/leaflet.js"></script>
   <script src="solver.js"></script>
+  <script src="ocr.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

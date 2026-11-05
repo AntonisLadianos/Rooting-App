@@ -117,6 +117,24 @@
     return j.map((x) => ({ label: x.display_name.split(',').slice(0, 4).join(','), lat: +x.lat, lng: +x.lon }));
   }
 
+  // Δοκιμάζει παραλλαγές (π.χ. χωρίς ΤΚ, χωρίς περιοχή) αν δεν βρεθεί αμέσως
+  async function geocodeSmart(q) {
+    const variants = [q];
+    const noPostal = q.replace(/\b\d{3}\s?\d{2}\b/g, '').replace(/\s+,/g, ',').replace(/[,\s]+$/, '').trim();
+    if (noPostal && noPostal !== q) variants.push(noPostal);
+    const parts = q.split(',').map((x) => x.trim()).filter(Boolean);
+    if (parts.length > 2) variants.push(parts[0] + ', ' + parts[parts.length - 1]);
+    let lastErr = null;
+    for (const v of variants) {
+      try {
+        const r = await geocode(v, 1);
+        if (r[0]) return r[0];
+      } catch (e) { lastErr = e; }
+    }
+    if (lastErr && variants.length === 1) throw lastErr;
+    return null;
+  }
+
   async function reverseGeocode(lat, lng) {
     try {
       const r = await fetch(`${PHOTON}/reverse?lat=${lat}&lon=${lng}&limit=1`);
@@ -423,6 +441,7 @@
     map.setView([s.lat, s.lng], Math.max(map.getZoom(), 15));
     openModal('Στάση', `
       <p class="stop-full">${esc(s.label)}</p>
+      ${s.orig ? `<p class="muted small">Από screenshot: ${esc(s.orig)}</p>` : ''}
       <div class="grid2">
         <a class="btn btn-primary" href="${esc(navUrl(s))}"${navUrl(s).startsWith('http') ? ' target="_blank" rel="noopener"' : ''}>➤ Πλοήγηση</a>
         <button class="btn ${s.done ? 'btn-ghost' : 'btn-success'}" id="mDone">${s.done ? '↺ Αναίρεση' : '✓ Ολοκληρώθηκε'}</button>
@@ -521,6 +540,91 @@
       if (!failed.length) setTimeout(closeModal, 900);
     };
   });
+
+
+  // ---------- Διευθύνσεις από screenshot ----------
+  $('btnShot').onclick = () => { $('shotInput').value = ''; $('shotInput').click(); };
+  $('shotInput').addEventListener('change', async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const found = [];
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const label = files.length > 1 ? `Διαβάζω εικόνα ${i + 1}/${files.length}` : 'Διαβάζω την εικόνα';
+        busy(true, label + '…');
+        const text = await RootingOCR.recognize(files[i], (m) => {
+          if (m.status === 'recognizing text') busy(true, `${label}… ${Math.round((m.progress || 0) * 100)}%`);
+          else if (/loading|initializ/.test(m.status)) busy(true, 'Προετοιμασία αναγνώρισης κειμένου…\n(μόνο την πρώτη φορά αργεί)');
+        });
+        found.push(...RootingOCR.extract(text));
+      }
+    } catch (err) {
+      console.error(err);
+      busy(false);
+      toast('Δεν ήταν δυνατή η ανάγνωση: ' + err.message);
+      return;
+    }
+    busy(false);
+    // διπλότυπα (επικαλυπτόμενα screenshots ή ήδη στη λίστα)
+    const existing = new Set(S.stops.map((s) => RootingOCR.key(s.orig || '')));
+    const seen = new Set();
+    const items = [];
+    found.forEach((f) => {
+      const k = RootingOCR.key(f.address);
+      if (seen.has(k)) return;
+      seen.add(k);
+      items.push(Object.assign({}, f, { dup: existing.has(k) }));
+    });
+    reviewFound(items);
+  });
+
+  function reviewFound(items) {
+    if (!items.length) {
+      openModal('Δεν βρέθηκαν διευθύνσεις', `<p>Δεν αναγνώρισα διευθύνσεις στην εικόνα.</p>
+        <p class="muted small">Βεβαιώσου ότι οι διευθύνσεις φαίνονται καθαρά, ή χρησιμοποίησε «📋 Λίστα διευθύνσεων».</p>`);
+      return;
+    }
+    openModal(`Βρέθηκαν ${items.length} διευθύνσεις`, `
+      <p class="muted small">Έλεγξε και διόρθωσε αν χρειάζεται. Ξετσέκαρε όσες δεν θέλεις.</p>
+      <ul class="found-list">${items.map((it, i) => `
+        <li>
+          <input type="checkbox" id="fc${i}" ${it.dup ? '' : 'checked'}>
+          <div class="found-body">
+            <input type="text" id="fa${i}" value="${esc(it.address)}">
+            <small>${[it.name ? '👤 ' + esc(it.name) : '', it.phone ? '📞 ' + esc(it.phone) : '', it.dup ? '<b>υπάρχει ήδη</b>' : ''].filter(Boolean).join(' · ')}</small>
+          </div>
+        </li>`).join('')}</ul>
+      <button class="btn btn-primary btn-block" id="foundGo">Προσθήκη</button>
+      <div id="foundLog" class="bulk-log"></div>`, (b) => {
+      const btn = b.querySelector('#foundGo');
+      const count = () => items.filter((_, i) => b.querySelector('#fc' + i).checked).length;
+      const upd = () => { btn.textContent = `Προσθήκη ${count()} στάσεων`; btn.disabled = !count(); };
+      items.forEach((_, i) => b.querySelector('#fc' + i).addEventListener('change', upd));
+      upd();
+      btn.onclick = async () => {
+        const chosen = items.map((it, i) => ({ it, on: b.querySelector('#fc' + i).checked, addr: b.querySelector('#fa' + i).value.trim() }))
+          .filter((x) => x.on && x.addr);
+        btn.disabled = true;
+        let ok = 0; const failed = [];
+        for (let i = 0; i < chosen.length; i++) {
+          btn.textContent = `Εντοπισμός ${i + 1}/${chosen.length}…`;
+          const { it, addr } = chosen[i];
+          try {
+            const r = await geocodeSmart(addr);
+            if (r) {
+              S.stops.push({ id: uid(), label: r.label, lat: r.lat, lng: r.lng, note: it.name || '', phone: it.phone || '', orig: addr, done: false });
+              ok++;
+            } else failed.push(addr);
+          } catch (err) { failed.push(addr); }
+          await new Promise((res) => setTimeout(res, 250));
+        }
+        invalidateRoute(); save(); render(); fitAll();
+        btn.disabled = false; btn.textContent = 'Προσθήκη';
+        b.querySelector('#foundLog').innerHTML = `<p>✓ Προστέθηκαν ${ok} στάσεις.</p>` + (failed.length ? `<p class="err">Δεν βρέθηκαν στον χάρτη (${failed.length}):</p><ul>${failed.map((f) => `<li>${esc(f)}</li>`).join('')}</ul><p class="muted small">Πρόσθεσέ τες χειροκίνητα από την αναζήτηση.</p>` : '');
+        if (!failed.length) setTimeout(closeModal, 900);
+      };
+    });
+  }
 
   $('btnClear').onclick = () => {
     if (!S.stops.length) return;
