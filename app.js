@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '8';
+  const APP_VERSION = '9';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // ---------- Κατάσταση ----------
@@ -40,32 +40,24 @@
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   // ---------- Χάρτης ----------
-  const map = L.map('map', { zoomControl: false, attributionControl: true }).setView([37.9838, 23.7275], 12);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap contributors'
-  }).addTo(map);
-  const layerMarkers = L.layerGroup().addTo(map);
-  let routeLine = null;
-  let meMarker = null;
+  // mv = Google Maps (αν υπάρχει κλειδί) ή δωρεάν χάρτης. Δημιουργείται στην εκκίνηση (startMap).
+  let mv = null;
+  const DEFAULT_CENTER = { lat: 37.9838, lng: 23.7275 };
 
-  function numIcon(text, cls) {
-    return L.divIcon({ className: '', html: `<div class="pin ${cls || ''}">${esc(text)}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] });
-  }
-
-  // Παρατεταμένο πάτημα / δεξί κλικ για προσθήκη στάσης
-  map.on('contextmenu', async (e) => {
-    const { lat, lng } = e.latlng;
-    const popup = L.popup().setLatLng(e.latlng).setContent('Αναζήτηση διεύθυνσης…').openOn(map);
-    const label = await reverseGeocode(lat, lng);
+  // Παρατεταμένο πάτημα στον χάρτη -> προσθήκη στάσης
+  async function onMapLongPress(lat, lng) {
+    if (navigator.vibrate) navigator.vibrate(20);
     const div = document.createElement('div');
+    div.className = 'map-popup';
+    div.textContent = 'Αναζήτηση διεύθυνσης…';
+    mv.popup(lat, lng, div);
+    const label = await reverseGeocode(lat, lng);
     div.innerHTML = `<div style="margin-bottom:8px">${esc(label)}</div>`;
     const b = document.createElement('button');
     b.className = 'btn btn-primary'; b.textContent = '+ Προσθήκη στάσης';
-    b.onclick = () => { addStop({ label, lat, lng }); map.closePopup(); };
+    b.onclick = () => { addStop({ label, lat, lng }); mv.closePopup(); };
     div.appendChild(b);
-    popup.setContent(div);
-  });
+  }
 
   // ---------- Γεωεντοπισμός ----------
   function getPosition(timeout) {
@@ -79,9 +71,7 @@
     });
   }
   function showMe() {
-    if (!myPos) return;
-    if (!meMarker) meMarker = L.circleMarker([myPos.lat, myPos.lng], { radius: 8, color: '#fff', weight: 3, fillColor: '#2563eb', fillOpacity: 1 }).addTo(map);
-    else meMarker.setLatLng([myPos.lat, myPos.lng]);
+    if (myPos && mv) mv.setMe(myPos);
   }
   let watchId = null;
   function startWatch() {
@@ -107,8 +97,7 @@
     const pts = S.stops.filter((x) => !x.done);
     if (pts.length) return { lat: pts.reduce((a, x) => a + x.lat, 0) / pts.length, lng: pts.reduce((a, x) => a + x.lng, 0) / pts.length };
     if (S.start) return S.start;
-    const c = map.getCenter();
-    return { lat: c.lat, lng: c.lng };
+    return mv ? mv.getCenter() : DEFAULT_CENTER;
   }
 
   // Photon με επανάληψη: ο δημόσιος server απαντά συχνά 503 όταν είναι φορτωμένος
@@ -170,26 +159,35 @@
   }
   function googleEnabled() { return !!S.settings.googleKey && googleUsage() < GOOGLE_MONTH_LIMIT; }
 
-  function loadGoogle() {
+  // Φορτώνει μία φορά τη βιβλιοθήκη Google (χάρτης + αναζήτηση). Αλλαγή κλειδιού -> επαναφόρτωση σελίδας.
+  let googleAuthFailed = false;
+  function loadGoogleCore() {
+    if (googleP) return googleP;
     const key = S.settings.googleKey;
-    if (googleP && googleKeyLoaded === key) return googleP;
     googleKeyLoaded = key;
     googleP = new Promise((resolve, reject) => {
-      window.__rootingGmAuthFail = () => reject(new Error('Το κλειδί Google δεν δέχεται (έλεγξε τους περιορισμούς του)'));
-      window.gm_authFailure = () => { googleP = null; if (window.__rootingGmAuthFail) window.__rootingGmAuthFail(); };
-      window.__rootingGmReady = async () => {
-        try {
-          const { Geocoder } = await google.maps.importLibrary('geocoding');
-          resolve(new Geocoder());
-        } catch (e) { reject(e); }
+      window.gm_authFailure = () => {
+        googleAuthFailed = true;
+        reject(new Error('Το κλειδί Google δεν δέχεται (έλεγξε τους περιορισμούς του)'));
+        onGoogleAuthFailure();
       };
+      window.__rootingGmReady = () => resolve(true);
       const sc = document.createElement('script');
       sc.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&language=el&region=GR&loading=async&callback=__rootingGmReady`;
       sc.async = true;
-      sc.onerror = () => { googleP = null; reject(new Error('Δεν φορτώθηκε η Google')); };
+      sc.onerror = () => reject(new Error('Δεν φορτώθηκε η Google'));
       document.head.appendChild(sc);
     });
     return googleP;
+  }
+  let geocoderP = null;
+  function loadGoogle() {
+    if (googleAuthFailed) return Promise.reject(new Error('Το κλειδί Google δεν δέχεται'));
+    if (!geocoderP) {
+      geocoderP = loadGoogleCore().then(() => google.maps.importLibrary('geocoding')).then(({ Geocoder }) => new Geocoder());
+      geocoderP.catch(() => { geocoderP = null; });
+    }
+    return geocoderP;
   }
 
   // Επιστρέφει {label, lat, lng, exact} ή null. exact = βρέθηκε ακριβώς ο αριθμός/κτίριο.
@@ -320,7 +318,7 @@
     S.stops.push({ id: uid(), label: p.label, lat: p.lat, lng: p.lng, note: '', phone: '', orig: p.orig || '', exact: p.exact !== false, done: false });
     invalidateRoute();
     save(); render();
-    map.setView([p.lat, p.lng], Math.max(map.getZoom(), 14));
+    if (mv) mv.setView(p.lat, p.lng, Math.max(mv.getZoom(), 14));
     toast('Προστέθηκε: ' + p.label.split(',')[0]);
   }
 
@@ -429,7 +427,10 @@
       const n = nextChunk().length;
       $('btnFullRoute').textContent = n > 1 ? `🗺 Όλη η διαδρομή στο Google Maps (${n} στάσεις)` : '🗺 Άνοιγμα στο Google Maps';
       $('btnFullRoute').href = googleFullRouteUrl();
+      $('btnReopt').textContent = done ? '⚡ Από τη θέση μου' : '⚡ Νέα βελτιστοποίηση';
     } else card.classList.add('hidden');
+    document.body.classList.toggle('has-route', !!nextStop);
+    if (typeof sheetState !== 'undefined' && sheetState === 'peek') requestAnimationFrame(() => setSheet('peek'));
     if (driveOpen) renderDrive();
 
     // Σύνοψη
@@ -450,36 +451,34 @@
   }
 
   function drawMap(list, nextStop) {
-    layerMarkers.clearLayers();
-    const pts = [];
+    if (!mv) return;
+    const items = [];
     const origin = S.route && S.route.origin ? S.route.origin : S.start;
-    if (origin) {
-      L.marker([origin.lat, origin.lng], { icon: numIcon('▶', 'pin-start') }).addTo(layerMarkers).bindPopup('Αφετηρία: ' + esc(origin.label || ''));
-      pts.push([origin.lat, origin.lng]);
-    }
+    if (origin) items.push({ lat: origin.lat, lng: origin.lng, text: '▶', cls: 'pin-start', title: 'Αφετηρία', z: 2 });
     list.forEach((s, i) => {
-      const cls = s.done ? 'pin-done' : (nextStop && nextStop.id === s.id ? 'pin-next' : '');
-      const m = L.marker([s.lat, s.lng], { icon: numIcon(s.done ? '✓' : (S.route ? i + 1 : '•'), cls) }).addTo(layerMarkers);
-      m.on('click', () => openStop(s.id));
-      pts.push([s.lat, s.lng]);
+      const isNext = nextStop && nextStop.id === s.id;
+      items.push({
+        lat: s.lat, lng: s.lng, text: s.done ? '✓' : (S.route ? String(i + 1) : '•'),
+        cls: s.done ? 'pin-done' : (isNext ? 'pin-next' : ''), title: title(s),
+        z: isNext ? 50 : (s.done ? 1 : 10), onClick: () => openStop(s.id)
+      });
     });
-    if (S.endMode === 'fixed' && S.end) {
-      L.marker([S.end.lat, S.end.lng], { icon: numIcon('■', 'pin-end') }).addTo(layerMarkers).bindPopup('Τέλος: ' + esc(S.end.label));
-      pts.push([S.end.lat, S.end.lng]);
-    }
-    if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
-    if (S.route && S.route.geometry) {
-      routeLine = L.polyline(S.route.geometry, { color: '#2563eb', weight: 5, opacity: 0.8, dashArray: S.route.approx ? '8 8' : null }).addTo(map);
-    }
-    return pts;
+    if (S.endMode === 'fixed' && S.end) items.push({ lat: S.end.lat, lng: S.end.lng, text: '■', cls: 'pin-end', title: 'Τέλος', z: 2 });
+    mv.setMarkers(items);
+    mv.setRoute(S.route && S.route.geometry ? S.route.geometry : null, !!(S.route && S.route.approx));
   }
 
   function fitAll() {
+    if (!mv) return;
     const pts = [];
-    layerMarkers.eachLayer((m) => pts.push(m.getLatLng()));
-    if (myPos) pts.push(L.latLng(myPos.lat, myPos.lng));
-    if (pts.length === 1) map.setView(pts[0], 15);
-    else if (pts.length > 1) map.fitBounds(L.latLngBounds(pts), { padding: [30, 30] });
+    const origin = S.route && S.route.origin ? S.route.origin : S.start;
+    if (origin) pts.push({ lat: origin.lat, lng: origin.lng });
+    S.stops.filter((s) => !s.done).forEach((s) => pts.push({ lat: s.lat, lng: s.lng }));
+    if (!pts.length) S.stops.forEach((s) => pts.push({ lat: s.lat, lng: s.lng }));
+    if (S.endMode === 'fixed' && S.end) pts.push({ lat: S.end.lat, lng: S.end.lng });
+    if (myPos && !pts.length) pts.push(myPos);
+    const top = (parseInt(getComputedStyle(document.documentElement).getPropertyValue('--safe-top')) || 0) + 30;
+    mv.fit(pts, { top, bottom: 30, left: 30, right: 70 });
   }
 
   // ---------- Πλοήγηση ----------
@@ -530,7 +529,7 @@
     save(); render();
     if (val) {
       const next = orderedStops().find((x) => !x.done);
-      if (next) map.panTo([next.lat, next.lng]);
+      if (next && mv) mv.panTo(next.lat, next.lng);
       if (navigator.vibrate) navigator.vibrate(30);
     }
   }
@@ -584,7 +583,7 @@
   function openStop(id) {
     const s = S.stops.find((x) => x.id === id);
     if (!s) return;
-    map.setView([s.lat, s.lng], Math.max(map.getZoom(), 15));
+    if (mv) mv.setView(s.lat, s.lng, Math.max(mv.getZoom(), 15));
     openModal('Στάση', `
       <p class="stop-full">${esc(title(s))}</p>
       ${s.orig ? `<p class="muted small">Στον χάρτη: ${esc(s.label)}${s.exact === false ? ' (βρέθηκε μόνο ο δρόμος — η πλοήγηση θα ψάξει τον ακριβή αριθμό)' : ''}</p>` : ''}
@@ -824,7 +823,21 @@
   };
 
   // ---------- Ρυθμίσεις ----------
-  $('btnSettings').onclick = () => {
+  $('btnSettings').onclick = () => openSettings(false);
+  async function testGoogleKey(info) {
+    if (!S.settings.googleKey) return;
+    info.textContent = 'Δοκιμή κλειδιού…';
+    googleBadKeyWarned = true;
+    try {
+      const r = await googleGeocode('Ερμού 10, Αθήνα', null);
+      info.textContent = (r ? `✅ Λειτουργεί! Βρήκε: ${r.label}.` : '⚠️ Το κλειδί δουλεύει αλλά δεν βρέθηκε η δοκιμαστική διεύθυνση.') +
+        (mv && mv.kind === 'google' ? ' Χάρτης Google ενεργός.' : '');
+    } catch (e) {
+      info.textContent = '❌ Δεν δουλεύει: ' + (e.message || e.code || e) + '. Έλεγξε ότι ενεργοποίησες «Maps JavaScript API» και «Geocoding API» και τον περιορισμό ιστότοπου.';
+    }
+    googleBadKeyWarned = false;
+  }
+  function openSettings(runTest) {
     const g = googleFullRouteUrl(true);
     openModal('Ρυθμίσεις', `
       <label class="field"><span>Εφαρμογή πλοήγησης</span>
@@ -844,7 +857,15 @@
           <button class="btn btn-primary" id="sGSave">Αποθήκευση &amp; δοκιμή</button>
           <button class="btn btn-ghost" id="sGDel">Αφαίρεση</button>
         </div>
-        <p class="muted small" id="sGInfo">Αυτόν τον μήνα: ${googleUsage()} / 10.000 δωρεάν αναζητήσεις. Πάνω από ${GOOGLE_MONTH_LIMIT} η εφαρμογή γυρνάει μόνη της στη δωρεάν αναζήτηση, για να μη χρεωθείς.</p>
+        <p class="muted small" id="sGInfo"></p>
+        <p class="muted small">Αυτόν τον μήνα: <b>${googleUsage()}</b> / 10.000 αναζητήσεις · <b>${mapUsage()}</b> / 10.000 ανοίγματα χάρτη (δωρεάν). Στις 9.500 η εφαρμογή γυρνάει μόνη της στα δωρεάν, για να μη χρεωθείς.</p>
+        ${S.settings.googleKey ? `
+        <label class="field" style="margin-top:10px"><span>Χάρτης</span>
+          <select id="sMapEng"><option value="google">Google (περιστροφή, κίνηση)</option><option value="free">Δωρεάν (OpenStreetMap)</option></select></label>
+        <label class="field"><span>Map ID (για περιστροφή/3D — προαιρετικό)</span>
+          <input id="sMapId" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="π.χ. 8f3a…" value="${esc(S.settings.googleMapId || '')}"></label>
+        <button class="btn btn-ghost btn-block" id="sMapSave">Εφαρμογή ρυθμίσεων χάρτη</button>
+        <p class="muted small">Τώρα: ${mv && mv.kind === 'google' ? 'χάρτης Google' : 'δωρεάν χάρτης'}.</p>` : ''}
       </div>
       <button class="btn btn-ghost btn-block" id="sExport">⬇︎ Εξαγωγή στάσεων (κείμενο)</button>
       <p class="muted small">Χάρτες: © OpenStreetMap contributors. Δρομολόγηση: OSRM. Αναζήτηση: ${S.settings.googleKey ? 'Google, ' : ''}Photon / Nominatim.<br>Τα δεδομένα σου αποθηκεύονται μόνο σε αυτό το κινητό.<br>Έκδοση ${APP_VERSION}</p>`, (b) => {
@@ -854,21 +875,25 @@
       const svc = b.querySelector('#sSvc');
       svc.onchange = () => { S.settings.serviceMin = Math.max(0, +svc.value || 0); save(); render(); };
       const info = b.querySelector('#sGInfo');
-      b.querySelector('#sGSave').onclick = async () => {
+      // αλλαγή κλειδιού/χάρτη -> επαναφόρτωση (η Google φορτώνεται μία φορά ανά σελίδα) και αυτόματη δοκιμή
+      const reloadAndTest = () => { try { sessionStorage.setItem('rooting.testGoogle', '1'); } catch (e) { /* ignore */ } location.reload(); };
+      b.querySelector('#sGSave').onclick = () => {
         const k = b.querySelector('#sGKey').value.trim();
         if (!k) return;
         S.settings.googleKey = k; save();
-        googleP = null; googleBadKeyWarned = true;
-        info.textContent = 'Δοκιμή…';
-        try {
-          const r = await googleGeocode('Ερμού 10, Αθήνα', null);
-          info.textContent = r ? `✅ Λειτουργεί! Βρήκε: ${r.label}` : '⚠️ Το κλειδί δουλεύει αλλά δεν βρέθηκε η δοκιμαστική διεύθυνση.';
-        } catch (e) {
-          info.textContent = '❌ Δεν δουλεύει: ' + (e.message || e.code || e) + '. Έλεγξε ότι ενεργοποίησες «Maps JavaScript API» και «Geocoding API» και τον περιορισμό ιστότοπου.';
-        }
-        googleBadKeyWarned = false;
+        info.textContent = 'Επαναφόρτωση…';
+        reloadAndTest();
       };
-      b.querySelector('#sGDel').onclick = () => { delete S.settings.googleKey; googleP = null; save(); b.querySelector('#sGKey').value = ''; info.textContent = 'Αφαιρέθηκε. Χρησιμοποιείται η δωρεάν αναζήτηση.'; };
+      b.querySelector('#sGDel').onclick = () => { delete S.settings.googleKey; save(); location.reload(); };
+      const eng = b.querySelector('#sMapEng');
+      if (eng) {
+        eng.value = S.settings.mapEngine === 'free' ? 'free' : 'google';
+        b.querySelector('#sMapSave').onclick = () => {
+          S.settings.mapEngine = eng.value;
+          S.settings.googleMapId = b.querySelector('#sMapId').value.trim();
+          save(); reloadAndTest();
+        };
+      }
       b.querySelector('#sExport').onclick = async () => {
         const txt = orderedStops().map((s, i) => `${i + 1}. ${s.label}${s.note ? ' — ' + s.note : ''}${s.phone ? ' — ' + s.phone : ''}`).join('\n');
         try {
@@ -876,11 +901,12 @@
           else { await navigator.clipboard.writeText(txt); toast('Αντιγράφηκε'); }
         } catch (e) { /* ακυρώθηκε */ }
       };
+      if (runTest) testGoogleKey(info);
     });
-  };
+  }
 
   $('btnLocate').onclick = async () => {
-    try { const p = await getPosition(); map.setView([p.lat, p.lng], 15); startWatch(); }
+    try { const p = await getPosition(); if (mv) mv.setView(p.lat, p.lng, 15); startWatch(); }
     catch (e) { toast(e.message); }
   };
 
@@ -997,7 +1023,7 @@
       save(); render(); fitAll();
       busy(false);
       toast(approxGeom ? 'Η διαδρομή υπολογίστηκε κατά προσέγγιση (πρόβλημα σύνδεσης με τον server δρομολόγησης).' : 'Η διαδρομή είναι έτοιμη!');
-      $('panel').scrollTo({ top: 0, behavior: 'smooth' });
+      setSheet('peek'); setTimeout(fitAll, 320);
     } catch (e) {
       console.error(e);
       busy(false);
@@ -1075,14 +1101,151 @@
   $('btnDrive').onclick = openDrive;
   $('dClose').onclick = closeDrive;
 
+  // ---------- Κάρτα που σέρνεται (κάτω / μέση / πάνω) ----------
+  const sheet = $('sheet'), sheetBody = $('sheetBody');
+  let sheetState = 'half', sheetY = 0;
+  function vh() { return document.getElementById('app').clientHeight; }
+  function safeTop() { return parseInt(getComputedStyle(document.documentElement).getPropertyValue('--safe-top')) || 0; }
+  function barH() { const b = $('optimizeBar'); return getComputedStyle(b).display === 'none' ? 0 : b.offsetHeight; }
+  // Ύψος «κάτω» θέσης: φαίνεται η επόμενη στάση (με τα κουμπιά της) ή η αναζήτηση
+  function peekHeight() {
+    const next = $('nextCard');
+    const el = !next.classList.contains('hidden') ? $('nextActions') : $('addBlock');
+    const bodyTop = sheetBody.getBoundingClientRect().top - sheet.getBoundingClientRect().top;
+    const elBottom = el.getBoundingClientRect().bottom - sheetBody.getBoundingClientRect().top + sheetBody.scrollTop;
+    const safeB = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--safe-bottom')) || 0;
+    return Math.min(vh() * 0.6, bodyTop + elBottom + 14 + (barH() || safeB));
+  }
+  function snapY(state) {
+    const H = vh();
+    if (state === 'full') return safeTop() + 56;
+    if (state === 'half') return Math.max(safeTop() + 120, H * 0.48);
+    return Math.max(H * 0.4, H - peekHeight());
+  }
+  function applySheet(y, animate) {
+    sheetY = y;
+    sheet.classList.toggle('anim', !!animate);
+    sheet.style.transform = `translateY(${y}px)`;
+    document.documentElement.style.setProperty('--sheet-top', y + 'px');
+  }
+  function setSheet(state, animate = true) {
+    sheetState = state;
+    sheet.classList.toggle('full', state === 'full');
+    if (state !== 'full') sheetBody.scrollTop = 0;
+    applySheet(snapY(state), animate);
+    // ο χάρτης «τελειώνει» εκεί που αρχίζει η κάρτα (εκτός από την πάνω θέση)
+    const visible = vh() - snapY(state === 'full' ? 'half' : state);
+    document.documentElement.style.setProperty('--map-bottom', Math.max(0, visible) + 'px');
+  }
+  // ο browser μερικές φορές «σπρώχνει» τη σελίδα όταν ανοίγει το πληκτρολόγιο — την επαναφέρουμε
+  $('app').addEventListener('scroll', () => { $('app').scrollTop = 0; });
+  (function sheetGestures() {
+    let y0 = 0, t0 = 0, startY = 0, mode = null, fromHandle = false, lastY = 0, lastT = 0, vel = 0;
+    const order = ['peek', 'half', 'full'];
+    sheet.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      y0 = lastY = e.touches[0].clientY; t0 = lastT = Date.now(); startY = sheetY; mode = null; vel = 0;
+      fromHandle = !!e.target.closest('.sheet-handle');
+    }, { passive: true });
+    sheet.addEventListener('touchmove', (e) => {
+      if (e.touches.length !== 1) return;
+      const y = e.touches[0].clientY, dy = y - y0;
+      if (!mode) {
+        if (Math.abs(dy) < 6) return;
+        if (fromHandle || sheetState !== 'full') mode = 'drag';
+        else if (sheetBody.scrollTop <= 0 && dy > 0) mode = 'drag';
+        else mode = 'scroll';
+      }
+      if (mode !== 'drag') return;
+      e.preventDefault(); // σταματάει και το «τράβηγμα για ανανέωση»
+      const now = Date.now();
+      vel = (y - lastY) / Math.max(1, now - lastT); lastY = y; lastT = now;
+      const minY = snapY('full'), maxY = vh() - 90;
+      applySheet(Math.min(maxY, Math.max(minY, startY + dy)), false);
+    }, { passive: false });
+    sheet.addEventListener('touchend', () => {
+      if (mode !== 'drag') return;
+      mode = null;
+      let target = nearestState();
+      if (Math.abs(vel) > 0.45) {
+        // γρήγορο «πέταγμα»: πάει στην επόμενη θέση προς την κατεύθυνση της κίνησης
+        const ys = order.map((st) => ({ st, y: snapY(st) }));
+        if (vel < 0) { const up = ys.filter((o) => o.y < sheetY - 10).sort((a, b) => b.y - a.y)[0]; target = up ? up.st : 'full'; }
+        else { const dn = ys.filter((o) => o.y > sheetY + 10).sort((a, b) => a.y - b.y)[0]; target = dn ? dn.st : 'peek'; }
+      }
+      setSheet(target);
+    });
+    function nearestState() {
+      let best = 'half', d = Infinity;
+      order.forEach((st) => { const dd = Math.abs(snapY(st) - sheetY); if (dd < d) { d = dd; best = st; } });
+      return best;
+    }
+    // πάτημα στο χερούλι: εναλλαγή κάτω <-> μέση/πάνω
+    $('sheetHandle').addEventListener('click', () => setSheet(sheetState === 'peek' ? 'half' : (sheetState === 'half' ? 'full' : 'peek')));
+    // ποντίκι (υπολογιστής): σύρσιμο από το χερούλι
+    $('sheetHandle').addEventListener('mousedown', (e) => {
+      const y0m = e.clientY, s0 = sheetY;
+      const mm = (ev) => applySheet(Math.min(vh() - 90, Math.max(snapY('full'), s0 + ev.clientY - y0m)), false);
+      const mu = () => { window.removeEventListener('mousemove', mm); window.removeEventListener('mouseup', mu); setSheet(nearestState()); };
+      window.addEventListener('mousemove', mm); window.addEventListener('mouseup', mu);
+    });
+  })();
+  window.addEventListener('resize', () => setSheet(sheetState, false));
+  // πληκτρολόγιο: η αναζήτηση ανεβαίνει πάνω για να μην κρύβεται
+  searchEl.addEventListener('focus', () => setSheet('full'));
+  $('btnReopt').onclick = optimize;
+
+  // ---------- Επιλογή χάρτη ----------
+  const MAP_MONTH_LIMIT = 9500;
+  function mapUsage() { const u = S.settings.mapUsage || {}; return u.month === monthKey() ? u.count : 0; }
+  function useGoogleMap() { return !!S.settings.googleKey && S.settings.mapEngine !== 'free' && mapUsage() < MAP_MONTH_LIMIT && !googleAuthFailed; }
+  async function startMap() {
+    const el = $('map');
+    const center = myPos || (S.stops[0] ? { lat: S.stops[0].lat, lng: S.stops[0].lng } : (S.start || DEFAULT_CENTER));
+    if (useGoogleMap()) {
+      try {
+        await loadGoogleCore();
+        mv = await RootingMapView.createGoogle(el, center, S.settings.googleMapId);
+        S.settings.mapUsage = { month: monthKey(), count: mapUsage() + 1 }; save();
+      } catch (e) { console.warn('Google map', e); mv = null; el.innerHTML = ''; }
+    }
+    if (!mv) mv = RootingMapView.createLeaflet(el, center);
+    mv.onLongPress(onMapLongPress);
+    $('btnTraffic').classList.toggle('hidden', !mv.canTraffic);
+    if (mv.canRotate) mv.onRotate((rot) => $('btnNorth').classList.toggle('hidden', !rot));
+    showMe();
+  }
+  function onGoogleAuthFailure() {
+    if (mv && mv.kind === 'google') {
+      toast('Ο χάρτης Google δεν δέχτηκε το κλειδί — χρησιμοποιείται ο δωρεάν χάρτης');
+      $('map').innerHTML = ''; mv = null;
+      const el = $('map').cloneNode(false); $('map').replaceWith(el);
+      mv = RootingMapView.createLeaflet(el, DEFAULT_CENTER);
+      mv.onLongPress(onMapLongPress);
+      $('btnTraffic').classList.add('hidden'); $('btnNorth').classList.add('hidden');
+      render(); fitAll(); showMe();
+    }
+  }
+  let trafficOn = false;
+  $('btnTraffic').onclick = () => { trafficOn = !trafficOn; mv.setTraffic(trafficOn); $('btnTraffic').classList.toggle('on', trafficOn); };
+  $('btnNorth').onclick = () => mv.resetNorth();
+
   // ---------- Εκκίνηση ----------
   render();
-  if (layerMarkers.getLayers().length) fitAll();
-  if (navigator.permissions && navigator.permissions.query) {
-    navigator.permissions.query({ name: 'geolocation' }).then((p) => {
-      if (p.state === 'granted') getPosition().then((pos) => { if (!S.stops.length) map.setView([pos.lat, pos.lng], 14); startWatch(); }).catch(() => {});
-    }).catch(() => {});
-  }
+  setSheet(S.route ? 'peek' : 'half', false);
+  startMap().then(() => {
+    render();
+    if (S.stops.length) fitAll();
+    if (navigator.permissions && navigator.permissions.query) {
+      navigator.permissions.query({ name: 'geolocation' }).then((p) => {
+        if (p.state === 'granted') getPosition().then((pos) => { if (!S.stops.length) mv.setView(pos.lat, pos.lng, 14); startWatch(); }).catch(() => {});
+      }).catch(() => {});
+    }
+    // μετά από αλλαγή κλειδιού: δοκιμή και εμφάνιση αποτελέσματος
+    try {
+      if (sessionStorage.getItem('rooting.testGoogle')) { sessionStorage.removeItem('rooting.testGoogle'); openSettings(true); }
+    } catch (e) { /* ignore */ }
+  });
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
   }

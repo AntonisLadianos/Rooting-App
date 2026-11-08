@@ -26,25 +26,35 @@
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; background: var(--bg); color: var(--text);
   font: 16px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; }
-body { overscroll-behavior: none; }
+body { overscroll-behavior: none; position: fixed; inset: 0; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, textarea, .stop-full, .modal-body p { -webkit-user-select: text; user-select: text; }
 .hidden { display: none !important; }
 .muted { color: var(--muted); }
 .small { font-size: 13px; }
 
-#app { position: fixed; inset: 0; display: flex; flex-direction: column; }
-#map { height: 40vh; height: 40dvh; flex: none; background: #dfe3e8; }
-.map-fab { position: absolute; right: 12px; top: calc(40dvh - 84px); z-index: 500; width: 46px; height: 46px;
-  border-radius: 50%; border: 0; background: var(--card); color: var(--primary); font-size: 22px;
-  box-shadow: 0 2px 10px rgba(0,0,0,.2); cursor: pointer; }
-.map-fab-top { top: calc(var(--safe-top) + 12px); color: var(--text); }
+#app { position: fixed; inset: 0; overflow: hidden; background: var(--bg); }
+/* Ο χάρτης πιάνει όλη την οθόνη· το κάτω όριό του ακολουθεί την κάρτα για να φαίνεται το λογότυπο/πνευματικά */
+#map { position: absolute; left: 0; right: 0; top: 0; bottom: var(--map-bottom, 0px); background: #dfe3e8; transition: bottom .25s ease; touch-action: none; }
+.map-ctrls { position: absolute; right: 12px; top: calc(var(--safe-top) + 12px); z-index: 500; display: flex; flex-direction: column; gap: 10px; }
+.map-fab { width: 48px; height: 48px; border-radius: 50%; border: 0; background: var(--card); color: var(--text); font-size: 22px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.22); cursor: pointer; display: grid; place-items: center; padding: 0; }
+.map-fab.on { background: var(--primary); color: #fff; }
+#btnLocate { color: var(--primary); }
 
-#panel { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; background: var(--bg);
-  margin-top: -16px; border-radius: 18px 18px 0 0; position: relative; z-index: 400;
-  padding: 6px 16px 0; box-shadow: 0 -4px 16px rgba(0,0,0,.08); }
-.grabber { width: 40px; height: 5px; background: var(--line); border-radius: 3px; margin: 4px auto 10px; }
-.bottom-spacer { height: calc(96px + var(--safe-bottom)); }
+/* ---- Κάρτα που σέρνεται ---- */
+.sheet { position: absolute; left: 0; right: 0; top: 0; height: 100%; z-index: 600; background: var(--bg);
+  border-radius: 20px 20px 0 0; box-shadow: 0 -6px 24px rgba(0,0,0,.16); display: flex; flex-direction: column;
+  transform: translateY(100%); will-change: transform; }
+.sheet.anim { transition: transform .28s cubic-bezier(.2,.8,.2,1); }
+.sheet-handle { flex: none; padding: 8px 0 6px; touch-action: none; cursor: grab; }
+.grabber { width: 44px; height: 5px; background: var(--muted); opacity: .45; border-radius: 3px; margin: 0 auto; }
+.sheet-body { flex: 1; min-height: 0; overflow-y: hidden; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  padding: 2px 16px 0; touch-action: pan-y; }
+.sheet.full .sheet-body { overflow-y: auto; }
+.bottom-spacer { height: calc(110px + var(--safe-bottom) + var(--sheet-top, 0px)); }
+body.has-route #optimizeBar { display: none; }
 
 .card { background: var(--card); border-radius: var(--radius); padding: 12px; margin-bottom: 12px;
   box-shadow: 0 1px 2px rgba(0,0,0,.05); }
@@ -76,6 +86,14 @@ body { overscroll-behavior: none; }
 .btn-lg { min-height: 52px; font-size: 17px; }
 .btn-block { display: flex; width: 100%; margin-bottom: 8px; }
 .row-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 12px; }
+.add-row { margin-top: 10px; }
+.next-more { margin-top: 10px; }
+.next-more .btn-block { margin-bottom: 8px; }
+.next-more .row-btns { margin: 0; }
+.list-head { gap: 8px; }
+.list-clear { width: auto; margin-left: auto; font-size: 14px; color: var(--danger); }
+.me-dot { width: 18px; height: 18px; border-radius: 50%; background: #2563eb; border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(37,99,235,.25), 0 1px 4px rgba(0,0,0,.4); transform: translateY(50%); }
+.pin-wrap { transform: translateY(50%); cursor: pointer; }
 .row-btns .btn { font-size: 14px; }
 .icon-btn { border: 0; background: none; font-size: 20px; color: var(--muted); width: 40px; height: 40px; cursor: pointer; }
 
@@ -113,7 +131,7 @@ textarea { resize: vertical; margin-bottom: 10px; }
 .badge { display: inline-block; background: var(--primary); color: #fff; font-size: 12px; border-radius: 10px; padding: 1px 8px; vertical-align: 2px; }
 .stops { list-style: none; margin: 0; padding: 0; }
 .stop { display: flex; align-items: center; gap: 12px; background: var(--card); border-radius: var(--radius);
-  padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
+  padding: 12px 12px; min-height: 56px; margin-bottom: 8px; cursor: pointer; }
 .stop .num { flex: none; width: 30px; height: 30px; border-radius: 50%; background: var(--primary); color: #fff;
   display: grid; place-items: center; font-weight: 700; font-size: 14px; }
 .stop.current { outline: 2px solid var(--next); }
@@ -126,7 +144,7 @@ textarea { resize: vertical; margin-bottom: 10px; }
 .stop-meta { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
 .empty { color: var(--muted); text-align: center; padding: 18px 8px; font-size: 14px; }
 
-#optimizeBar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 600; padding: 10px 16px calc(10px + var(--safe-bottom));
+#optimizeBar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 700; padding: 10px 16px calc(10px + var(--safe-bottom));
   background: linear-gradient(to top, var(--bg) 70%, transparent); }
 
 /* Πινέζες χάρτη */
@@ -163,11 +181,10 @@ textarea { resize: vertical; margin-bottom: 10px; }
 .spinner { width: 44px; height: 44px; border-radius: 50%; border: 4px solid rgba(255,255,255,.3); border-top-color: #fff; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.leaflet-control-attribution { font-size: 10px; margin-bottom: 18px !important; }
+.leaflet-control-attribution { font-size: 10px; }
 .leaflet-popup-content .btn { min-height: 36px; padding: 6px 12px; }
 
 /* Google Maps / οδήγηση */
-.gm-btn { margin-top: 8px; margin-bottom: 8px; }
 .btn-dark { background: #111827; color: #fff; }
 .drive { position: fixed; inset: 0; z-index: 1050; background: #0b0f17; color: #f3f4f6; display: flex; flex-direction: column;
   padding: calc(var(--safe-top) + 10px) 16px calc(var(--safe-bottom) + 16px); overflow-y: auto; }
@@ -188,7 +205,6 @@ textarea { resize: vertical; margin-bottom: 10px; }
 .d-finish { text-align: center; font-size: 30px; font-weight: 800; }
 
 /* Screenshot */
-.shot-btn { margin-top: 8px; }
 .found-list { list-style: none; margin: 0 0 12px; padding: 0; }
 .found-list li { display: flex; gap: 10px; align-items: flex-start; background: var(--card); border-radius: 12px; padding: 10px; margin-bottom: 8px; }
 .found-list input[type=checkbox] { width: 24px; height: 24px; margin-top: 10px; flex: none; accent-color: var(--primary); }
