@@ -50,6 +50,7 @@
     for (let k = 0; k < 2; k++) {
       s = s.replace(/^[^\p{L}\d(]+/u, '');
       s = s.replace(/^[\p{L}\d]{1,2}[^\p{L}\d\s(]*\s+(?=[\p{Lu}(\d])/u, '');
+      s = s.replace(/^[\p{Lu}\d]{1,2}[^\p{L}\d\s(]*\s+(?=\p{Ll}{3,})/u, ''); // «ΟΦ θεοφανους»
     }
     return s.trim();
   }
@@ -62,15 +63,16 @@
     return m ? m[1] : '';
   }
   function isCountryOnly(s) { return /^[,.\s]*(Ελλ[αά]δα|ΕΛΛΑΔΑ|Greece)[,.\s]*$/i.test(s); }
-  function hasPostal(s) { return !isPhoneLine(s) && RE_POSTAL.test(s); }
+  function hasPostal(s) { return !isPhoneLine(s) && !isCode(s) && RE_POSTAL.test(s); }
   function looksLikeName(s) {
     return s && !/\d/.test(s) && /^\p{L}+(?:[\s.-]+\p{L}+){1,3}$/u.test(s) && !/παράδοση|παραλαβή|πακέτο|ενέργειες|υπολείπονται/i.test(s);
   }
-  function isNoise(s) { return /πακέτο|παράδοση σε|παραλαβή|υπολείπονται|ενέργειες/i.test(s); }
+  function isCode(s) { return /^\S{1,4}\s*-+\s*-?\s*[\p{L}\d]{6,}$/u.test(s); } // κωδικός δέματος
+  function isNoise(s) { return isCode(s) || /πακέτο|παράδοση σε|παραλαβή|υπολείπονται|ενέργειες|clever point/i.test(s); }
 
   // Μορφή για αναζήτηση: χωρίς χώρα και παρενθέσεις
   function tidyAddress(s) {
-    return s.replace(RE_COUNTRY, '').replace(/[()]/g, ' ').replace(/\s+,/g, ',').replace(/,\s*,/g, ',')
+    return s.replace(RE_COUNTRY, '').replace(/\s\d{3}(?=[,\s]*$)/, '').replace(/\b\d{6}\b/g, '').replace(/,\s*[\p{L}\d]{1,2}\s*$/u, '').replace(/[()]/g, ' ').replace(/\s+,/g, ',').replace(/,\s*,/g, ',')
       .replace(/\s+/g, ' ').replace(/[,\s]+$/, '').trim();
   }
 
@@ -102,7 +104,14 @@
         start--;
       }
       // προς τα κάτω: μόνο «Ελλάδα» ή ολοκλήρωση παρένθεσης
-      while (end + 1 < lines.length && !used[end + 1] && (isCountryOnly(lines[end + 1]) || (/\($/.test(lines[end]) && !isPhoneLine(lines[end + 1])))) end++;
+      const continues = (k) => {
+        const nx = lines[k];
+        if (isCountryOnly(nx)) return true;
+        if (isPhoneLine(nx) || isNoise(nx) || hasPostal(nx) && /\d{1,4}\s*,/.test(nx.replace(RE_POSTAL, ''))) return false;
+        if (/^\d{2}\b/.test(nx) && /\d{3}\s*$/.test(lines[k - 1])) return true;          // «713» / «05, Ελλάδα»
+        return /[,(]\s*$/.test(lines[k - 1]) && end - start < 2 && !looksLikeName(nx);  // συνέχεια μετά από κόμμα
+      };
+      while (end + 1 < lines.length && !used[end + 1] && continues(end + 1)) end++;
       for (let k = start; k <= end; k++) used[k] = true;
 
       const raw = lines.slice(start, end + 1).join(' ').replace(/\s+/g, ' ').trim();
@@ -110,7 +119,9 @@
       if (address.length < 5) continue;
 
       let name = '';
+      const oneWord = (x) => x && /^\p{L}{3,}$/u.test(x) && !isNoise(x);
       if (start - 1 >= 0 && looksLikeName(lines[start - 1])) name = lines[start - 1];
+      else if (start - 2 >= 0 && oneWord(lines[start - 1]) && looksLikeName(lines[start - 2])) name = lines[start - 2] + ' ' + lines[start - 1];
       let phone = '';
       for (let k = end + 1; k <= end + 2 && k < lines.length; k++) {
         if (isPhoneLine(lines[k])) { phone = normPhone(lines[k]); break; }

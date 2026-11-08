@@ -1,5 +1,5 @@
 // Service worker: η εφαρμογή ανοίγει και χωρίς σύνδεση (η αναζήτηση/δρομολόγηση θέλουν internet)
-const CACHE = 'rooting-v6';
+const CACHE = 'rooting-v7';
 const SHELL = [
   './', 'index.html', 'style.css', 'app.js', 'solver.js', 'ocr.js', 'geo.js', 'manifest.webmanifest',
   'vendor/leaflet/leaflet.js', 'vendor/leaflet/leaflet.css',
@@ -16,7 +16,7 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   // Πρώτα δίκτυο (για να έρχονται οι ενημερώσεις), αλλιώς cache
   e.respondWith(
-    fetch(e.request).then((r) => {
+    fetch(e.request, { cache: 'no-cache' }).then((r) => {
       const copy = r.clone();
       caches.open(CACHE).then((c) => c.put(e.request, copy));
       return r;

@@ -91,7 +91,14 @@
     if (exact) score += 25;
     else if (pq.number && hn) score -= 3; // ίδιος δρόμος, άλλος αριθμός
     const pc = String(p.postcode || '').replace(/\s/g, '');
-    if (pq.postal && pc) score += pc === pq.postal ? 20 : (pc.slice(0, 3) === pq.postal.slice(0, 3) ? 10 : -10);
+    // ΤΚ: τα 2 πρώτα ψηφία = νομός. Άλλος νομός -> σίγουρα λάθος (π.χ. 71410 Ηράκλειο vs 35133 Λαμία)
+    let postalBad = false;
+    if (pq.postal && pc) {
+      if (pc === pq.postal) score += 20;
+      else if (pc.slice(0, 3) === pq.postal.slice(0, 3)) score += 10;
+      else if (pc.slice(0, 2) === pq.postal.slice(0, 2)) score += 2;
+      else postalBad = true;
+    }
     let areaBad = false;
     if (pq.area.length) {
       // πόλη/συνοικία μετράει πολύ, νομός λιγότερο, καμία αντιστοιχία = ποινή
@@ -105,7 +112,7 @@
       else if (!latinArea) { score -= 15; areaBad = true; }
     }
     if (bias) score -= Math.min(distKm(bias, { lat, lng }), 400) / 20; // έως -20
-    return { score, streetOk: ns >= 0.6, areaBad, exact, lat, lng };
+    return { score, streetOk: ns >= 0.6, areaBad: areaBad || postalBad, exact, lat, lng };
   }
 
   function pickBest(q, features, bias) {

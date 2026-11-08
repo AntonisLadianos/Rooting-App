@@ -6,6 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
+  const APP_VERSION = '7';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // ---------- Κατάσταση ----------
@@ -111,17 +112,19 @@
   }
 
   // Photon με επανάληψη: ο δημόσιος server απαντά συχνά 503 όταν είναι φορτωμένος
-  async function photon(q, limit, bias) {
-    const url = `${PHOTON}/api/?q=${encodeURIComponent(q)}&limit=${limit}&lat=${bias.lat}&lon=${bias.lng}`;
+  let photonTrouble = 0; // πόσα σφάλματα είδαμε πρόσφατα (για να «χαλαρώνουμε» τον ρυθμό)
+  async function photon(q, limit, bias, bbox) {
+    const url = `${PHOTON}/api/?q=${encodeURIComponent(q)}&limit=${limit}&lat=${bias.lat}&lon=${bias.lng}` + (bbox ? `&bbox=${bbox.join(',')}` : '');
     let lastErr = null;
-    for (let attempt = 0; attempt < 4; attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) {
       try {
         const r = await fetch(url);
-        if (r.ok) return (await r.json()).features || [];
+        if (r.ok) { photonTrouble = Math.max(0, photonTrouble - 1); return (await r.json()).features || []; }
         lastErr = new Error('photon ' + r.status);
         if (r.status < 500 && r.status !== 429) break;
       } catch (e) { lastErr = e; }
-      await new Promise((res) => setTimeout(res, 700 * (attempt + 1)));
+      photonTrouble++;
+      await new Promise((res) => setTimeout(res, 1000 * (attempt + 1)));
     }
     throw lastErr || new Error('photon');
   }
@@ -152,16 +155,19 @@
 
   // Μία διεύθυνση (screenshot / λίστα): διαλέγει το σωστό αποτέλεσμα, αλλιώς δοκιμάζει
   // χωρίς ΤΚ και χωρίς αριθμό. Δεν επιστρέφει δρόμο σε λάθος πόλη.
-  async function geocodeSmart(q) {
+  // region: {lat, lng} -> αναζήτηση μόνο γύρω από εκεί (~35 χλμ), και με σκέτο όνομα δρόμου
+  async function geocodeSmart(q, region) {
     const noPostal = q.replace(/(^|\D)\d{3}\s?\d{2}(?!\d)/g, '$1').replace(/\s+,/g, ',').replace(/[,\s]+$/, '').trim();
     // αφαιρεί τον αριθμό σπιτιού (τον τελευταίο αριθμό πριν το πρώτο κόμμα)
     const noNumber = noPostal.replace(/\s\d{1,4}\p{L}?(?=\s*(,|$))/u, '').replace(/\s+,/g, ',').trim();
-    const variants = [...new Set([q, noPostal, noNumber])].filter((v) => v.length > 2);
-    const bias = searchBias();
+    const streetOnly = noNumber.split(',')[0].trim();
+    const variants = [...new Set(region ? [q, noNumber, streetOnly] : [q, noPostal, noNumber])].filter((v) => v.length > 2);
+    const bias = region || searchBias();
+    const bbox = region ? [region.lng - 0.4, region.lat - 0.3, region.lng + 0.4, region.lat + 0.3] : null;
     let errors = 0;
     for (const v of variants) {
       try {
-        const feats = await photon(v, 10, bias);
+        const feats = await photon(v, 10, bias, bbox);
         const best = RootingGeo.pickBest(q, feats, bias);
         if (best) return toResult(best.f, q, best);
       } catch (e) { errors++; }
@@ -583,26 +589,74 @@
       const btn = b.querySelector('#bulkGo');
       btn.disabled = true;
       if (!myPos) { btn.textContent = 'Εντοπισμός θέσης…'; try { await getPosition(6000); } catch (e) { /* συνεχίζουμε χωρίς */ } }
-      let ok = 0; const failed = [];
-      for (let i = 0; i < lines.length; i++) {
-        btn.textContent = `Αναζήτηση ${i + 1}/${lines.length}…`;
-        const line = lines[i];
-        try {
-          const r = await geocodeSmart(line);
-          if (r) {
-            S.stops.push({ id: uid(), label: r.label, lat: r.lat, lng: r.lng, note: '', phone: '', orig: line, exact: r.exact, done: false });
-            ok++;
-          } else failed.push(line);
-        } catch (e) { failed.push(line); }
-        await new Promise((res) => setTimeout(res, 400));
-      }
-      invalidateRoute(); save(); render(); fitAll();
+      const out = await geocodeBatch(lines.map((l) => ({ addr: l })), (t) => { btn.textContent = t; });
       btn.disabled = false; btn.textContent = 'Προσθήκη';
-      log.innerHTML = `<p>✓ Προστέθηκαν ${ok} στάσεις.</p>` + (failed.length ? `<p class="err">Δεν βρέθηκαν (${failed.length}):</p><ul>${failed.map((f) => `<li>${esc(f)}</li>`).join('')}</ul><p class="muted small">Δοκίμασε να τις γράψεις πιο αναλυτικά από την αναζήτηση.</p>` : '');
-      if (!failed.length) setTimeout(closeModal, 900);
+      showBatchResult(log, btn, out);
     };
   });
 
+
+
+  // ---------- Μαζικός εντοπισμός (λίστα / screenshot) ----------
+  // 1ος γύρος: κανονική αναζήτηση. Μετά βρίσκουμε την περιοχή όπου έπεσαν οι περισσότερες στάσεις
+  // και ξαναψάχνουμε εκεί όσες δεν βρέθηκαν ή έπεσαν πολύ μακριά (π.χ. ίδιος δρόμος σε άλλη πόλη).
+  function median(a) { const b = a.slice().sort((x, y) => x - y); return b[Math.floor(b.length / 2)]; }
+  async function geocodeBatch(entries, progress) {
+    const res = new Array(entries.length).fill(null);
+    let netErr = 0;
+    const pause = () => new Promise((r) => setTimeout(r, photonTrouble > 0 ? 1500 : 350));
+    for (let i = 0; i < entries.length; i++) {
+      progress(`Εντοπισμός ${i + 1}/${entries.length}…`);
+      try { res[i] = await geocodeSmart(entries[i].addr); } catch (e) { res[i] = null; entries[i].err = true; }
+      await pause();
+    }
+    const pts = res.filter(Boolean).concat(S.stops.filter((s) => !s.done));
+    if (pts.length >= 2) {
+      const center = { lat: median(pts.map((p) => p.lat)), lng: median(pts.map((p) => p.lng)) };
+      const redo = entries.map((_, i) => i).filter((i) => !res[i] || RootingGeo.distKm(center, res[i]) > 40);
+      for (let n = 0; n < redo.length; n++) {
+        const i = redo[n];
+        progress(`Δεύτερη προσπάθεια ${n + 1}/${redo.length}…`);
+        try {
+          const r = await geocodeSmart(entries[i].addr, center);
+          if (r) { res[i] = r; entries[i].err = false; }
+          else if (res[i]) res[i] = null; // ήταν σε λάθος πόλη
+        } catch (e) { entries[i].err = true; }
+        await pause();
+      }
+    }
+    const failed = [];
+    let added = 0;
+    entries.forEach((e, i) => {
+      const r = res[i];
+      if (!r) { failed.push(e); if (e.err) netErr++; return; }
+      S.stops.push({ id: uid(), label: r.label, lat: r.lat, lng: r.lng, note: e.name || '', phone: e.phone || '', orig: e.addr, exact: r.exact, done: false });
+      added++;
+    });
+    if (added) { invalidateRoute(); save(); render(); fitAll(); }
+    return { added, failed, netErr };
+  }
+
+  // Αποτέλεσμα + κουμπί «Ξαναδοκίμασε» για όσες δεν βρέθηκαν
+  function showBatchResult(logEl, btn, out, rerun) {
+    const { added, failed, netErr } = out;
+    logEl.innerHTML = `<p>✓ Προστέθηκαν ${added} στάσεις.</p>` + (failed.length ? `
+      <p class="err">Δεν βρέθηκαν στον χάρτη (${failed.length}):</p>
+      <ul>${failed.map((f) => `<li>${esc(f.addr)}</li>`).join('')}</ul>
+      ${netErr ? `<p class="muted small">⚠️ Η υπηρεσία αναζήτησης δεν απαντούσε για ${netErr} από αυτές. Περίμενε λίγο και πάτα «Ξαναδοκίμασε».</p>` : ''}
+      <button class="btn btn-ghost btn-block" id="retryFailed">↻ Ξαναδοκίμασε όσες δεν βρέθηκαν</button>
+      <p class="muted small">Όσες δεν βρίσκονται ούτε έτσι, λείπουν από τον δωρεάν χάρτη. Πρόσθεσέ τες από την αναζήτηση γράφοντας μόνο τον δρόμο ή πάτα παρατεταμένα στο σημείο πάνω στον χάρτη.</p>` : '');
+    if (failed.length) {
+      logEl.querySelector('#retryFailed').onclick = async () => {
+        logEl.querySelector('#retryFailed').disabled = true;
+        failed.forEach((f) => { f.err = false; });
+        const again = await geocodeBatch(failed, (t) => { btn.textContent = t; });
+        btn.textContent = 'Προσθήκη';
+        again.added += added;
+        showBatchResult(logEl, btn, again, rerun);
+      };
+    } else setTimeout(closeModal, 900);
+  }
 
   // ---------- Διευθύνσεις από screenshot ----------
   $('btnShot').onclick = () => { $('shotInput').value = ''; $('shotInput').click(); };
@@ -668,23 +722,9 @@
           .filter((x) => x.on && x.addr);
         btn.disabled = true;
         if (!myPos) { btn.textContent = 'Εντοπισμός θέσης…'; try { await getPosition(6000); } catch (e) { /* συνεχίζουμε χωρίς */ } }
-        let ok = 0; const failed = [];
-        for (let i = 0; i < chosen.length; i++) {
-          btn.textContent = `Εντοπισμός ${i + 1}/${chosen.length}…`;
-          const { it, addr } = chosen[i];
-          try {
-            const r = await geocodeSmart(addr);
-            if (r) {
-              S.stops.push({ id: uid(), label: r.label, lat: r.lat, lng: r.lng, note: it.name || '', phone: it.phone || '', orig: addr, exact: r.exact, done: false });
-              ok++;
-            } else failed.push(addr);
-          } catch (err) { failed.push(addr); }
-          await new Promise((res) => setTimeout(res, 400));
-        }
-        invalidateRoute(); save(); render(); fitAll();
+        const out = await geocodeBatch(chosen.map((x) => ({ addr: x.addr, name: x.it.name, phone: x.it.phone })), (t) => { btn.textContent = t; });
         btn.disabled = false; btn.textContent = 'Προσθήκη';
-        b.querySelector('#foundLog').innerHTML = `<p>✓ Προστέθηκαν ${ok} στάσεις.</p>` + (failed.length ? `<p class="err">Δεν βρέθηκαν στον χάρτη (${failed.length}):</p><ul>${failed.map((f) => `<li>${esc(f)}</li>`).join('')}</ul><p class="muted small">Πρόσθεσέ τες χειροκίνητα από την αναζήτηση.</p>` : '');
-        if (!failed.length) setTimeout(closeModal, 900);
+        showBatchResult(b.querySelector('#foundLog'), btn, out);
       };
     });
   }
@@ -718,7 +758,7 @@
         <input id="sSvc" type="number" min="0" max="120" inputmode="numeric" value="${S.settings.serviceMin}"></label>
       ${g ? `<a class="btn btn-ghost btn-block" href="${esc(g)}" target="_blank" rel="noopener">🌐 Όλη η διαδρομή στο Google Maps (μέσω browser)</a><p class="muted small">Χρησιμοποίησέ το μόνο αν δεν ανοίγει η εφαρμογή Google Maps.</p>` : ''}
       <button class="btn btn-ghost btn-block" id="sExport">⬇︎ Εξαγωγή στάσεων (κείμενο)</button>
-      <p class="muted small">Χάρτες: © OpenStreetMap contributors. Δρομολόγηση: OSRM. Αναζήτηση: Photon / Nominatim.<br>Τα δεδομένα σου αποθηκεύονται μόνο σε αυτό το κινητό.</p>`, (b) => {
+      <p class="muted small">Χάρτες: © OpenStreetMap contributors. Δρομολόγηση: OSRM. Αναζήτηση: Photon / Nominatim.<br>Τα δεδομένα σου αποθηκεύονται μόνο σε αυτό το κινητό.<br>Έκδοση ${APP_VERSION}</p>`, (b) => {
       const sel = b.querySelector('#sNav');
       sel.value = S.settings.navApp;
       sel.onchange = () => { S.settings.navApp = sel.value; save(); render(); };
