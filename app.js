@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '10';
+  const APP_VERSION = '11';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // ---------- Κατάσταση ----------
@@ -1385,7 +1385,31 @@
       if (sessionStorage.getItem('rooting.testGoogle')) { sessionStorage.removeItem('rooting.testGoogle'); openSettings(true); }
     } catch (e) { /* ignore */ }
   });
+  // ---------- Αυτόματη ενημέρωση ----------
+  // Η εφαρμογή στην αρχική οθόνη του iPhone κρατάει δικό της αντίγραφο. Ελέγχουμε το version.json
+  // (χωρίς cache) στο άνοιγμα και κάθε φορά που επιστρέφεις στην εφαρμογή· αν άλλαξε, ανανεώνουμε.
+  async function checkForUpdate() {
+    try {
+      const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) return;
+      const v = String((await r.json()).version);
+      if (v === APP_VERSION) return;
+      let tried = null;
+      try { tried = sessionStorage.getItem('rooting.updatedTo'); } catch (e) { /* ignore */ }
+      if (tried === v) return; // ήδη προσπαθήσαμε σε αυτή τη συνεδρία — όχι ατέρμονες ανανεώσεις
+      try { sessionStorage.setItem('rooting.updatedTo', v); } catch (e) { /* ignore */ }
+      if (navigator.serviceWorker) {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg) await reg.update().catch(() => {});
+      }
+      if (window.caches) { const ks = await caches.keys(); await Promise.all(ks.map((k) => caches.delete(k))); }
+      toast('Νέα έκδοση — ανανέωση…');
+      setTimeout(() => location.reload(), 600);
+    } catch (e) { /* χωρίς σύνδεση: συνεχίζουμε με ό,τι έχουμε */ }
+  }
+  checkForUpdate();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForUpdate(); });
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {}));
   }
 })();
