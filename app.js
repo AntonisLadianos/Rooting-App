@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '7';
+  const APP_VERSION = '8';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // ---------- Κατάσταση ----------
@@ -155,8 +155,80 @@
 
   // Μία διεύθυνση (screenshot / λίστα): διαλέγει το σωστό αποτέλεσμα, αλλιώς δοκιμάζει
   // χωρίς ΤΚ και χωρίς αριθμό. Δεν επιστρέφει δρόμο σε λάθος πόλη.
+  // ---------- Google (προαιρετικό, με δικό σου κλειδί) ----------
+  // Το κλειδί μένει μόνο σε αυτό το κινητό (localStorage), δεν ανεβαίνει πουθενά.
+  const GOOGLE_MONTH_LIMIT = 9500; // λίγο κάτω από τις 10.000 δωρεάν τον μήνα
+  let googleP = null, googleKeyLoaded = '', googleBadKeyWarned = false;
+  function monthKey() { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1); }
+  function googleUsage() {
+    const u = S.settings.googleUsage || {};
+    return u.month === monthKey() ? u.count : 0;
+  }
+  function countGoogle() {
+    S.settings.googleUsage = { month: monthKey(), count: googleUsage() + 1 };
+    save();
+  }
+  function googleEnabled() { return !!S.settings.googleKey && googleUsage() < GOOGLE_MONTH_LIMIT; }
+
+  function loadGoogle() {
+    const key = S.settings.googleKey;
+    if (googleP && googleKeyLoaded === key) return googleP;
+    googleKeyLoaded = key;
+    googleP = new Promise((resolve, reject) => {
+      window.__rootingGmAuthFail = () => reject(new Error('Το κλειδί Google δεν δέχεται (έλεγξε τους περιορισμούς του)'));
+      window.gm_authFailure = () => { googleP = null; if (window.__rootingGmAuthFail) window.__rootingGmAuthFail(); };
+      window.__rootingGmReady = async () => {
+        try {
+          const { Geocoder } = await google.maps.importLibrary('geocoding');
+          resolve(new Geocoder());
+        } catch (e) { reject(e); }
+      };
+      const sc = document.createElement('script');
+      sc.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&language=el&region=GR&loading=async&callback=__rootingGmReady`;
+      sc.async = true;
+      sc.onerror = () => { googleP = null; reject(new Error('Δεν φορτώθηκε η Google')); };
+      document.head.appendChild(sc);
+    });
+    return googleP;
+  }
+
+  // Επιστρέφει {label, lat, lng, exact} ή null. exact = βρέθηκε ακριβώς ο αριθμός/κτίριο.
+  async function googleGeocode(q, near) {
+    const geocoder = await loadGoogle();
+    const req = { address: q, region: 'gr', componentRestrictions: { country: 'GR' } };
+    if (near) req.bounds = { south: near.lat - 0.3, west: near.lng - 0.4, north: near.lat + 0.3, east: near.lng + 0.4 };
+    countGoogle();
+    let resp;
+    try { resp = await geocoder.geocode(req); }
+    catch (e) {
+      const code = (e && e.code) || '';
+      if (code === 'ZERO_RESULTS') return null;
+      if (code === 'REQUEST_DENIED' && !googleBadKeyWarned) { googleBadKeyWarned = true; toast('Η Google αρνήθηκε το κλειδί — έλεγξε τις ρυθμίσεις του'); }
+      throw e;
+    }
+    const r = resp && resp.results && resp.results[0];
+    if (!r) return null;
+    const exactTypes = ['street_address', 'premise', 'subpremise', 'establishment', 'point_of_interest'];
+    const exact = !r.partial_match && r.types.some((t) => exactTypes.includes(t));
+    const loc = r.geometry.location;
+    return {
+      label: r.formatted_address.replace(/,\s*(Ελλάδα|Greece)$/i, ''),
+      lat: typeof loc.lat === 'function' ? loc.lat() : loc.lat,
+      lng: typeof loc.lng === 'function' ? loc.lng() : loc.lng,
+      exact, query: q, google: true
+    };
+  }
+
   // region: {lat, lng} -> αναζήτηση μόνο γύρω από εκεί (~35 χλμ), και με σκέτο όνομα δρόμου
   async function geocodeSmart(q, region) {
+    // Με κλειδί Google: πρώτα Google (1 αίτημα), και μόνο αν δεν βρει, τα δωρεάν
+    if (googleEnabled()) {
+      try {
+        const g = await googleGeocode(q, region || searchBias());
+        // δεχόμαστε αποτέλεσμα που είναι τουλάχιστον σε επίπεδο δρόμου
+        if (g && (!region || RootingGeo.distKm(region, g) < 50)) return g;
+      } catch (e) { /* συνεχίζουμε με τα δωρεάν */ }
+    }
     const noPostal = q.replace(/(^|\D)\d{3}\s?\d{2}(?!\d)/g, '$1').replace(/\s+,/g, ',').replace(/[,\s]+$/, '').trim();
     // αφαιρεί τον αριθμό σπιτιού (τον τελευταίο αριθμό πριν το πρώτο κόμμα)
     const noNumber = noPostal.replace(/\s\d{1,4}\p{L}?(?=\s*(,|$))/u, '').replace(/\s+,/g, ',').trim();
@@ -209,6 +281,7 @@
   }
 
   function pickSuggestion(it) {
+    if (it.google) it = Object.assign({}, it, { label: it.label.replace(/^📍 /, '') });
     // αν ο χάρτης βρήκε μόνο τον δρόμο, κρατάμε αυτό που έγραψες (με τον αριθμό) για την πλοήγηση
     if (!it.exact && /\d/.test(it.query || '')) it = Object.assign({}, it, { orig: it.query });
     addStop(it);
@@ -223,13 +296,19 @@
     searchTimer = setTimeout(async () => {
       const seq = ++searchSeq;
       try {
-        const res = await geocode(q);
+        let res = await geocode(q).catch(() => []);
+        if (googleEnabled() && /\d/.test(q) && q.length >= 6) {
+          try {
+            const g = await googleGeocode(q, searchBias());
+            if (g) res = [Object.assign(g, { label: '📍 ' + g.label })].concat(res.slice(0, 4));
+          } catch (e) { /* μόνο τα δωρεάν */ }
+        }
         if (seq !== searchSeq) return;
         lastResults = res;
         renderSuggestions(res.length ? res : [], pickSuggestion);
         if (!res.length) toast('Δεν βρέθηκε η διεύθυνση');
       } catch (e) { if (seq === searchSeq) toast('Δεν υπάρχει σύνδεση για αναζήτηση'); }
-    }, 350);
+    }, googleEnabled() ? 700 : 350);
   });
   searchEl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && lastResults[0] && !sugEl.classList.contains('hidden')) { e.preventDefault(); pickSuggestion(lastResults[0]); }
@@ -757,13 +836,39 @@
       <label class="field"><span>Χρόνος σε κάθε στάση (λεπτά)</span>
         <input id="sSvc" type="number" min="0" max="120" inputmode="numeric" value="${S.settings.serviceMin}"></label>
       ${g ? `<a class="btn btn-ghost btn-block" href="${esc(g)}" target="_blank" rel="noopener">🌐 Όλη η διαδρομή στο Google Maps (μέσω browser)</a><p class="muted small">Χρησιμοποίησέ το μόνο αν δεν ανοίγει η εφαρμογή Google Maps.</p>` : ''}
+      <div class="card google-card">
+        <b>Αναζήτηση Google</b> <span class="muted small">${S.settings.googleKey ? (googleEnabled() ? '✅ ενεργή' : '⏸ έφτασε το μηνιαίο όριο') : 'ανενεργή'}</span>
+        <p class="muted small">Βρίσκει τις διευθύνσεις με ακριβή αριθμό, όπως το Spoke. Βάλε εδώ το δικό σου κλειδί (Google Maps Platform).</p>
+        <input id="sGKey" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="AIza…" value="${esc(S.settings.googleKey || '')}">
+        <div class="grid2" style="margin-top:8px">
+          <button class="btn btn-primary" id="sGSave">Αποθήκευση &amp; δοκιμή</button>
+          <button class="btn btn-ghost" id="sGDel">Αφαίρεση</button>
+        </div>
+        <p class="muted small" id="sGInfo">Αυτόν τον μήνα: ${googleUsage()} / 10.000 δωρεάν αναζητήσεις. Πάνω από ${GOOGLE_MONTH_LIMIT} η εφαρμογή γυρνάει μόνη της στη δωρεάν αναζήτηση, για να μη χρεωθείς.</p>
+      </div>
       <button class="btn btn-ghost btn-block" id="sExport">⬇︎ Εξαγωγή στάσεων (κείμενο)</button>
-      <p class="muted small">Χάρτες: © OpenStreetMap contributors. Δρομολόγηση: OSRM. Αναζήτηση: Photon / Nominatim.<br>Τα δεδομένα σου αποθηκεύονται μόνο σε αυτό το κινητό.<br>Έκδοση ${APP_VERSION}</p>`, (b) => {
+      <p class="muted small">Χάρτες: © OpenStreetMap contributors. Δρομολόγηση: OSRM. Αναζήτηση: ${S.settings.googleKey ? 'Google, ' : ''}Photon / Nominatim.<br>Τα δεδομένα σου αποθηκεύονται μόνο σε αυτό το κινητό.<br>Έκδοση ${APP_VERSION}</p>`, (b) => {
       const sel = b.querySelector('#sNav');
       sel.value = S.settings.navApp;
       sel.onchange = () => { S.settings.navApp = sel.value; save(); render(); };
       const svc = b.querySelector('#sSvc');
       svc.onchange = () => { S.settings.serviceMin = Math.max(0, +svc.value || 0); save(); render(); };
+      const info = b.querySelector('#sGInfo');
+      b.querySelector('#sGSave').onclick = async () => {
+        const k = b.querySelector('#sGKey').value.trim();
+        if (!k) return;
+        S.settings.googleKey = k; save();
+        googleP = null; googleBadKeyWarned = true;
+        info.textContent = 'Δοκιμή…';
+        try {
+          const r = await googleGeocode('Ερμού 10, Αθήνα', null);
+          info.textContent = r ? `✅ Λειτουργεί! Βρήκε: ${r.label}` : '⚠️ Το κλειδί δουλεύει αλλά δεν βρέθηκε η δοκιμαστική διεύθυνση.';
+        } catch (e) {
+          info.textContent = '❌ Δεν δουλεύει: ' + (e.message || e.code || e) + '. Έλεγξε ότι ενεργοποίησες «Maps JavaScript API» και «Geocoding API» και τον περιορισμό ιστότοπου.';
+        }
+        googleBadKeyWarned = false;
+      };
+      b.querySelector('#sGDel').onclick = () => { delete S.settings.googleKey; googleP = null; save(); b.querySelector('#sGKey').value = ''; info.textContent = 'Αφαιρέθηκε. Χρησιμοποιείται η δωρεάν αναζήτηση.'; };
       b.querySelector('#sExport').onclick = async () => {
         const txt = orderedStops().map((s, i) => `${i + 1}. ${s.label}${s.note ? ' — ' + s.note : ''}${s.phone ? ' — ' + s.phone : ''}`).join('\n');
         try {

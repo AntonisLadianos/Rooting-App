@@ -195,3 +195,6 @@ textarea { resize: vertical; margin-bottom: 10px; }
 .found-body { flex: 1; min-width: 0; }
 .found-body input { padding: 8px 10px; font-size: 15px; }
 .found-body small { display: block; color: var(--muted); margin-top: 4px; font-size: 13px; }
+
+.google-card { margin: 4px 0 10px; }
+.google-card p { margin: 6px 0; }
