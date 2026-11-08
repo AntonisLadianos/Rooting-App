@@ -1,7 +1,7 @@
 // Service worker: η εφαρμογή ανοίγει και χωρίς σύνδεση (η αναζήτηση/δρομολόγηση θέλουν internet)
-const CACHE = 'rooting-v5';
+const CACHE = 'rooting-v6';
 const SHELL = [
-  './', 'index.html', 'style.css', 'app.js', 'solver.js', 'ocr.js', 'manifest.webmanifest',
+  './', 'index.html', 'style.css', 'app.js', 'solver.js', 'ocr.js', 'geo.js', 'manifest.webmanifest',
   'vendor/leaflet/leaflet.js', 'vendor/leaflet/leaflet.css',
   'icons/icon-180.png', 'icons/icon-192.png'
 ];

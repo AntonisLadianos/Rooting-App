@@ -100,38 +100,78 @@
     return [...new Set(parts)].join(', ') || pr.name || 'Σημείο';
   }
 
+  // Σημείο αναφοράς για την αναζήτηση: θέση μου -> κέντρο των στάσεων -> αφετηρία -> χάρτης
+  function searchBias() {
+    if (myPos) return myPos;
+    const pts = S.stops.filter((x) => !x.done);
+    if (pts.length) return { lat: pts.reduce((a, x) => a + x.lat, 0) / pts.length, lng: pts.reduce((a, x) => a + x.lng, 0) / pts.length };
+    if (S.start) return S.start;
+    const c = map.getCenter();
+    return { lat: c.lat, lng: c.lng };
+  }
+
+  // Photon με επανάληψη: ο δημόσιος server απαντά συχνά 503 όταν είναι φορτωμένος
+  async function photon(q, limit, bias) {
+    const url = `${PHOTON}/api/?q=${encodeURIComponent(q)}&limit=${limit}&lat=${bias.lat}&lon=${bias.lng}`;
+    let lastErr = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        const r = await fetch(url);
+        if (r.ok) return (await r.json()).features || [];
+        lastErr = new Error('photon ' + r.status);
+        if (r.status < 500 && r.status !== 429) break;
+      } catch (e) { lastErr = e; }
+      await new Promise((res) => setTimeout(res, 700 * (attempt + 1)));
+    }
+    throw lastErr || new Error('photon');
+  }
+
+  function toResult(f, q, best) {
+    return {
+      label: photonLabel(f), lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0],
+      exact: best ? best.s.exact : !!(f.properties && f.properties.housenumber), query: q
+    };
+  }
+
+  // Λίστα προτάσεων (για την αναζήτηση): ταξινομημένες, οι λάθος δρόμοι στο τέλος
   async function geocode(q, limit) {
-    const bias = myPos || (S.start ? S.start : null) || { lat: map.getCenter().lat, lng: map.getCenter().lng };
+    const bias = searchBias();
     try {
-      const url = `${PHOTON}/api/?q=${encodeURIComponent(q)}&limit=${limit || 6}&lat=${bias.lat}&lon=${bias.lng}`;
-      const r = await fetch(url);
-      if (!r.ok) throw new Error('photon ' + r.status);
-      const j = await r.json();
-      const res = (j.features || []).map((f) => ({ label: photonLabel(f), lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] }));
-      if (res.length) return res;
+      const feats = await photon(q, 10, bias);
+      const pq = RootingGeo.parseQuery(q);
+      const ranked = feats.filter((f) => f.geometry).map((f) => ({ f, s: RootingGeo.scoreFeature(pq, f, bias) }))
+        .sort((a, b) => ((b.s.streetOk && !b.s.areaBad) - (a.s.streetOk && !a.s.areaBad)) || (b.s.score - a.s.score));
+      if (ranked.length) return ranked.slice(0, limit || 6).map((x) => toResult(x.f, q, x));
     } catch (e) { /* fallback */ }
     const url = `${NOMINATIM}/search?format=jsonv2&addressdetails=0&accept-language=el&limit=${limit || 6}&q=${encodeURIComponent(q)}`;
     const r = await fetch(url);
     if (!r.ok) throw new Error('Σφάλμα αναζήτησης');
     const j = await r.json();
-    return j.map((x) => ({ label: x.display_name.split(',').slice(0, 4).join(','), lat: +x.lat, lng: +x.lon }));
+    return j.map((x) => ({ label: x.display_name.split(',').slice(0, 4).join(','), lat: +x.lat, lng: +x.lon, exact: false, query: q }));
   }
 
-  // Δοκιμάζει παραλλαγές (π.χ. χωρίς ΤΚ, χωρίς περιοχή) αν δεν βρεθεί αμέσως
+  // Μία διεύθυνση (screenshot / λίστα): διαλέγει το σωστό αποτέλεσμα, αλλιώς δοκιμάζει
+  // χωρίς ΤΚ και χωρίς αριθμό. Δεν επιστρέφει δρόμο σε λάθος πόλη.
   async function geocodeSmart(q) {
-    const variants = [q];
-    const noPostal = q.replace(/\b\d{3}\s?\d{2}\b/g, '').replace(/\s+,/g, ',').replace(/[,\s]+$/, '').trim();
-    if (noPostal && noPostal !== q) variants.push(noPostal);
-    const parts = q.split(',').map((x) => x.trim()).filter(Boolean);
-    if (parts.length > 2) variants.push(parts[0] + ', ' + parts[parts.length - 1]);
-    let lastErr = null;
+    const noPostal = q.replace(/(^|\D)\d{3}\s?\d{2}(?!\d)/g, '$1').replace(/\s+,/g, ',').replace(/[,\s]+$/, '').trim();
+    // αφαιρεί τον αριθμό σπιτιού (τον τελευταίο αριθμό πριν το πρώτο κόμμα)
+    const noNumber = noPostal.replace(/\s\d{1,4}\p{L}?(?=\s*(,|$))/u, '').replace(/\s+,/g, ',').trim();
+    const variants = [...new Set([q, noPostal, noNumber])].filter((v) => v.length > 2);
+    const bias = searchBias();
+    let errors = 0;
     for (const v of variants) {
       try {
-        const r = await geocode(v, 1);
-        if (r[0]) return r[0];
-      } catch (e) { lastErr = e; }
+        const feats = await photon(v, 10, bias);
+        const best = RootingGeo.pickBest(q, feats, bias);
+        if (best) return toResult(best.f, q, best);
+      } catch (e) { errors++; }
     }
-    if (lastErr && variants.length === 1) throw lastErr;
+    if (errors === variants.length) {
+      // Photon εκτός λειτουργίας: εφεδρικά Nominatim (βρίσκει μόνο δρόμους)
+      const r = await geocode(noNumber || q, 1);
+      if (r[0]) return Object.assign(r[0], { exact: false, query: q });
+      throw new Error('Δεν υπάρχει σύνδεση με την υπηρεσία αναζήτησης');
+    }
     return null;
   }
 
@@ -163,6 +203,8 @@
   }
 
   function pickSuggestion(it) {
+    // αν ο χάρτης βρήκε μόνο τον δρόμο, κρατάμε αυτό που έγραψες (με τον αριθμό) για την πλοήγηση
+    if (!it.exact && /\d/.test(it.query || '')) it = Object.assign({}, it, { orig: it.query });
     addStop(it);
     searchEl.value = '';
     sugEl.classList.add('hidden');
@@ -190,7 +232,7 @@
 
   // ---------- Στάσεις ----------
   function addStop(p) {
-    S.stops.push({ id: uid(), label: p.label, lat: p.lat, lng: p.lng, note: '', phone: '', done: false });
+    S.stops.push({ id: uid(), label: p.label, lat: p.lat, lng: p.lng, note: '', phone: '', orig: p.orig || '', exact: p.exact !== false, done: false });
     invalidateRoute();
     save(); render();
     map.setView([p.lat, p.lng], Math.max(map.getZoom(), 14));
@@ -211,6 +253,9 @@
     }
     return S.stops.slice();
   }
+
+  // Τίτλος στάσης: η διεύθυνση όπως τη δώσαμε (με αριθμό), αλλιώς αυτή του χάρτη
+  function title(s) { return s.orig || s.label; }
 
   // ---------- Απόδοση ----------
   function fmtDur(sec) {
@@ -255,7 +300,7 @@
       li.innerHTML = `
         <span class="num">${s.done ? '✓' : (S.route ? i + 1 : '•')}</span>
         <span class="stop-body">
-          <span class="stop-title">${esc(s.label)}</span>
+          <span class="stop-title">${esc(title(s))}</span>
           ${meta.length ? `<span class="stop-meta">${meta.map(esc).join('  ·  ')}</span>` : ''}
         </span>
         <span class="chev">›</span>`;
@@ -286,7 +331,7 @@
       card.classList.remove('hidden');
       const idx = list.indexOf(nextStop);
       $('nextIdx').textContent = `· ${idx + 1} από ${list.length}`;
-      $('nextTitle').textContent = nextStop.label;
+      $('nextTitle').textContent = title(nextStop);
       const eta = etas[nextStop.id];
       const sub = [];
       if (eta) sub.push(`Άφιξη ~${fmtClock(eta.at)}`);
@@ -353,8 +398,23 @@
   }
 
   // ---------- Πλοήγηση ----------
+  // Προορισμός για την πλοήγηση: συντεταγμένες αν βρέθηκε ακριβής αριθμός,
+  // αλλιώς το κείμενο της διεύθυνσης (το Google Maps ξέρει τους αριθμούς καλύτερα)
+  function navTarget(s) {
+    if (s.orig && s.exact === false) return { text: s.orig + (/ελλ[αά]δα|greece/i.test(s.orig) ? '' : ', Ελλάδα') };
+    return { ll: `${s.lat},${s.lng}` };
+  }
   function navUrl(s) {
-    const ll = `${s.lat},${s.lng}`;
+    const t = navTarget(s);
+    if (t.text) {
+      const q = encodeURIComponent(t.text);
+      switch (S.settings.navApp) {
+        case 'google': return `comgooglemaps://?daddr=${q}&directionsmode=driving`;
+        case 'waze': return `https://waze.com/ul?q=${q}&navigate=yes`;
+        default: return `https://maps.apple.com/?daddr=${q}&dirflg=d`;
+      }
+    }
+    const ll = t.ll;
     switch (S.settings.navApp) {
       case 'google': return `comgooglemaps://?daddr=${ll}&directionsmode=driving`;
       case 'waze': return `https://waze.com/ul?ll=${ll}&navigate=yes`;
@@ -368,11 +428,12 @@
   function googleFullRouteUrl(web) {
     const chunk = nextChunk();
     if (!chunk.length) return null;
-    const ll = (s) => `${s.lat},${s.lng}`;
+    const ll = (s) => { const t = navTarget(s); return t.text ? encodeURIComponent(t.text) : `${s.lat},${s.lng}`; };
     if (!web) return `comgooglemaps://?daddr=${chunk.map(ll).join('+to:')}&directionsmode=driving`;
     const dest = chunk[chunk.length - 1];
-    const wps = chunk.slice(0, -1).map(ll).join('|');
-    return `https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${ll(dest)}` + (wps ? `&waypoints=${encodeURIComponent(wps)}` : '');
+    const raw = (s) => { const t = navTarget(s); return t.text || `${s.lat},${s.lng}`; };
+    const wps = chunk.slice(0, -1).map(raw).join('|');
+    return `https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${encodeURIComponent(raw(dest))}` + (wps ? `&waypoints=${encodeURIComponent(wps)}` : '');
   }
   function openUrl(url) { window.location.href = url; }
 
@@ -440,8 +501,8 @@
     if (!s) return;
     map.setView([s.lat, s.lng], Math.max(map.getZoom(), 15));
     openModal('Στάση', `
-      <p class="stop-full">${esc(s.label)}</p>
-      ${s.orig ? `<p class="muted small">Από screenshot: ${esc(s.orig)}</p>` : ''}
+      <p class="stop-full">${esc(title(s))}</p>
+      ${s.orig ? `<p class="muted small">Στον χάρτη: ${esc(s.label)}${s.exact === false ? ' (βρέθηκε μόνο ο δρόμος — η πλοήγηση θα ψάξει τον ακριβή αριθμό)' : ''}</p>` : ''}
       <div class="grid2">
         <a class="btn btn-primary" href="${esc(navUrl(s))}"${navUrl(s).startsWith('http') ? ' target="_blank" rel="noopener"' : ''}>➤ Πλοήγηση</a>
         <button class="btn ${s.done ? 'btn-ghost' : 'btn-success'}" id="mDone">${s.done ? '↺ Αναίρεση' : '✓ Ολοκληρώθηκε'}</button>
@@ -521,18 +582,19 @@
       const log = b.querySelector('#bulkLog');
       const btn = b.querySelector('#bulkGo');
       btn.disabled = true;
+      if (!myPos) { btn.textContent = 'Εντοπισμός θέσης…'; try { await getPosition(6000); } catch (e) { /* συνεχίζουμε χωρίς */ } }
       let ok = 0; const failed = [];
       for (let i = 0; i < lines.length; i++) {
         btn.textContent = `Αναζήτηση ${i + 1}/${lines.length}…`;
         const line = lines[i];
         try {
-          const r = await geocode(line, 1);
-          if (r[0]) {
-            S.stops.push({ id: uid(), label: r[0].label, lat: r[0].lat, lng: r[0].lng, note: line !== r[0].label ? 'Αρχικό: ' + line : '', phone: '', done: false });
+          const r = await geocodeSmart(line);
+          if (r) {
+            S.stops.push({ id: uid(), label: r.label, lat: r.lat, lng: r.lng, note: '', phone: '', orig: line, exact: r.exact, done: false });
             ok++;
           } else failed.push(line);
         } catch (e) { failed.push(line); }
-        await new Promise((res) => setTimeout(res, 250));
+        await new Promise((res) => setTimeout(res, 400));
       }
       invalidateRoute(); save(); render(); fitAll();
       btn.disabled = false; btn.textContent = 'Προσθήκη';
@@ -605,6 +667,7 @@
         const chosen = items.map((it, i) => ({ it, on: b.querySelector('#fc' + i).checked, addr: b.querySelector('#fa' + i).value.trim() }))
           .filter((x) => x.on && x.addr);
         btn.disabled = true;
+        if (!myPos) { btn.textContent = 'Εντοπισμός θέσης…'; try { await getPosition(6000); } catch (e) { /* συνεχίζουμε χωρίς */ } }
         let ok = 0; const failed = [];
         for (let i = 0; i < chosen.length; i++) {
           btn.textContent = `Εντοπισμός ${i + 1}/${chosen.length}…`;
@@ -612,11 +675,11 @@
           try {
             const r = await geocodeSmart(addr);
             if (r) {
-              S.stops.push({ id: uid(), label: r.label, lat: r.lat, lng: r.lng, note: it.name || '', phone: it.phone || '', orig: addr, done: false });
+              S.stops.push({ id: uid(), label: r.label, lat: r.lat, lng: r.lng, note: it.name || '', phone: it.phone || '', orig: addr, exact: r.exact, done: false });
               ok++;
             } else failed.push(addr);
           } catch (err) { failed.push(addr); }
-          await new Promise((res) => setTimeout(res, 250));
+          await new Promise((res) => setTimeout(res, 400));
         }
         invalidateRoute(); save(); render(); fitAll();
         btn.disabled = false; btn.textContent = 'Προσθήκη';
@@ -844,7 +907,7 @@
     const n = nextChunk().length;
     $('dBody').innerHTML = `
       <div class="d-label">Στάση ${idx + 1} από ${list.length}${eta ? ' · άφιξη ~' + fmtClock(eta.at) : ''}</div>
-      <div class="d-title">${esc(next.label)}</div>
+      <div class="d-title">${esc(title(next))}</div>
       ${next.note ? `<div class="d-note">📝 ${esc(next.note)}</div>` : ''}
       ${next.phone ? `<a class="btn btn-ghost d-call" href="tel:${esc(next.phone.replace(/\s/g, ''))}">📞 ${esc(next.phone)}</a>` : ''}
       <button class="btn btn-success d-big" id="dDoneGo">✓ Παραδόθηκε<small>${after ? 'και πλοήγηση στην επόμενη' : 'τελευταία στάση'}</small></button>
