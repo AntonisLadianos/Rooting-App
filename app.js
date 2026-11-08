@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '11';
+  const APP_VERSION = '12';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // ---------- Κατάσταση ----------
@@ -64,11 +64,19 @@
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) return reject(new Error('Δεν υποστηρίζεται εντοπισμός θέσης'));
       navigator.geolocation.getCurrentPosition(
-        (p) => { myPos = { lat: p.coords.latitude, lng: p.coords.longitude }; showMe(); resolve(myPos); },
+        (p) => { myPos = { lat: p.coords.latitude, lng: p.coords.longitude }; showMe(); rememberPos(); resolve(myPos); },
         (err) => reject(new Error(err.code === 1 ? 'Δεν δόθηκε άδεια τοποθεσίας' : 'Δεν βρέθηκε η τοποθεσία')),
         { enableHighAccuracy: true, timeout: timeout || 12000, maximumAge: 30000 }
       );
     });
+  }
+  // Θυμόμαστε την τελευταία θέση για να ανοίγει ο χάρτης κατευθείαν εκεί
+  let lastSavedPosAt = 0;
+  function rememberPos() {
+    if (!myPos || Date.now() - lastSavedPosAt < 60000) return;
+    lastSavedPosAt = Date.now();
+    S.lastPos = { lat: myPos.lat, lng: myPos.lng };
+    save();
   }
   function showMe() {
     if (myPos && mv) mv.setMe(myPos);
@@ -77,7 +85,7 @@
   function startWatch() {
     if (!navigator.geolocation || watchId != null) return;
     watchId = navigator.geolocation.watchPosition((p) => {
-      myPos = { lat: p.coords.latitude, lng: p.coords.longitude }; showMe();
+      myPos = { lat: p.coords.latitude, lng: p.coords.longitude }; showMe(); rememberPos();
     }, () => {}, { enableHighAccuracy: true, maximumAge: 15000 });
   }
 
@@ -1338,7 +1346,7 @@
   function useGoogleMap() { return !!S.settings.googleKey && S.settings.mapEngine !== 'free' && mapUsage() < MAP_MONTH_LIMIT && !googleAuthFailed; }
   async function startMap() {
     const el = $('map');
-    const center = myPos || (S.stops[0] ? { lat: S.stops[0].lat, lng: S.stops[0].lng } : (S.start || DEFAULT_CENTER));
+    const center = myPos || S.lastPos || (S.stops[0] ? { lat: S.stops[0].lat, lng: S.stops[0].lng } : (S.start || DEFAULT_CENTER));
     if (useGoogleMap()) {
       try {
         await loadGoogleCore();
@@ -1374,12 +1382,11 @@
   setSheet(S.route ? 'peek' : 'half', false);
   startMap().then(() => {
     render();
-    if (S.stops.length) fitAll();
-    if (navigator.permissions && navigator.permissions.query) {
-      navigator.permissions.query({ name: 'geolocation' }).then((p) => {
-        if (p.state === 'granted') getPosition().then((pos) => { if (!S.stops.length) mv.setView(pos.lat, pos.lng, 14); startWatch(); }).catch(() => {});
-      }).catch(() => {});
-    }
+    // Άνοιγμα: πρώτα στην τελευταία γνωστή θέση, μετά στη σημερινή μόλις τη βρει το GPS
+    if (S.lastPos) mv.setView(S.lastPos.lat, S.lastPos.lng, 15);
+    else if (S.stops.length) fitAll();
+    getPosition(15000).then((pos) => { mv.setView(pos.lat, pos.lng, 15); startWatch(); })
+      .catch(() => { if (!S.lastPos && S.stops.length) fitAll(); });
     // μετά από αλλαγή κλειδιού: δοκιμή και εμφάνιση αποτελέσματος
     try {
       if (sessionStorage.getItem('rooting.testGoogle')) { sessionStorage.removeItem('rooting.testGoogle'); openSettings(true); }
