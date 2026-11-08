@@ -25,6 +25,7 @@
       <button id="btnSettings" class="map-fab" title="Ρυθμίσεις" aria-label="Ρυθμίσεις">⚙︎</button>
       <button id="btnLocate" class="map-fab" title="Η θέση μου" aria-label="Η θέση μου">◎</button>
       <button id="btnTraffic" class="map-fab hidden" title="Κίνηση" aria-label="Κίνηση στους δρόμους">🚦</button>
+      <button id="btnSat" class="map-fab hidden" title="Δορυφόρος" aria-label="Δορυφορικός χάρτης">🛰</button>
       <button id="btnNorth" class="map-fab hidden" title="Βορράς" aria-label="Επαναφορά προσανατολισμού">🧭</button>
     </div>
 
@@ -35,20 +36,30 @@
 
         <!-- Επόμενη στάση (μετά τη βελτιστοποίηση) -->
         <div id="nextCard" class="card next-card hidden">
-          <div class="next-label">Επόμενη στάση <span id="nextIdx"></span></div>
+          <div class="next-top">
+            <span class="next-label">Επόμενη <span id="nextIdx"></span></span>
+            <span id="nextRemain" class="next-remain"></span>
+          </div>
+          <div class="progress"><div id="nextProgress"></div></div>
           <div id="nextTitle" class="next-title"></div>
           <div id="nextSub" class="next-sub"></div>
           <div class="next-actions" id="nextActions">
             <a id="btnNavNext" class="btn btn-primary btn-lg">➤ Πλοήγηση</a>
             <button id="btnDoneNext" class="btn btn-success btn-lg">✓ Παραδόθηκε</button>
+            <a id="btnCallNext" class="btn btn-ghost btn-lg call-btn hidden" aria-label="Κλήση">📞</a>
           </div>
-          <div class="next-more">
-            <button id="btnDrive" class="btn btn-dark btn-block btn-lg">🚗 Λειτουργία οδήγησης</button>
-            <a id="btnFullRoute" class="btn btn-ghost btn-block">🗺 Όλη η διαδρομή στο Google Maps</a>
-            <div class="row-btns">
-              <button id="btnSkipNext" class="btn btn-ghost">⏭ Για αργότερα</button>
-              <button id="btnReopt" class="btn btn-ghost">⚡ Νέα βελτιστοποίηση</button>
+          <div id="batchBar" class="batch-bar hidden">
+            <div id="batchText" class="batch-text"></div>
+            <div class="batch-btns">
+              <button id="btnBatchDone" class="btn btn-success"></button>
+              <button id="btnBatchCancel" class="btn btn-ghost" aria-label="Ακύρωση">✕</button>
             </div>
+          </div>
+          <div class="chips">
+            <a id="btnFullRoute" class="chip">🗺 Google Maps</a>
+            <button id="btnDrive" class="chip">🚗 Οδήγηση</button>
+            <button id="btnSkipNext" class="chip">⏭ Αργότερα</button>
+            <button id="btnReopt" class="chip">⚡ Νέα σειρά</button>
           </div>
         </div>
 
@@ -87,6 +98,11 @@
           <button id="btnClear" class="btn btn-link list-clear">🗑 Καθαρισμός</button>
         </div>
         <ol id="stops" class="stops"></ol>
+        <details id="doneBox" class="done-box hidden">
+          <summary id="doneSummary">Παραδόθηκαν</summary>
+          <ol id="doneStops" class="stops"></ol>
+        </details>
+        <p id="swipeHint" class="muted small swipe-hint hidden">Σύρε μια στάση δεξιά για «Παραδόθηκε», αριστερά για διαγραφή.</p>
         <p id="emptyHint" class="empty">Πρόσθεσε τις διευθύνσεις σου από πάνω (γράφοντας, με screenshot ή με λίστα), ή πάτα παρατεταμένα πάνω στον χάρτη.</p>
 
         <div class="bottom-spacer"></div>

@@ -45,7 +45,8 @@
     let markers = [], line = null, me = null, info = null, traffic = null;
 
     const view = {
-      kind: 'google', canRotate: true, canTraffic: true, raw: map,
+      kind: 'google', canRotate: true, canTraffic: true, canSatellite: true, raw: map,
+      setSatellite(on) { map.setMapTypeId(on ? 'hybrid' : 'roadmap'); },
       setView(lat, lng, zoom) { map.moveCamera({ center: { lat, lng }, zoom: zoom || map.getZoom() }); },
       panTo(lat, lng) { map.panTo({ lat, lng }); },
       getZoom() { return map.getZoom() || 12; },
@@ -148,7 +149,7 @@
       },
       popup(lat, lng, element) { L.popup().setLatLng([lat, lng]).setContent(element).openOn(map); },
       closePopup() { map.closePopup(); },
-      resetNorth() {}, onRotate() {}, setTraffic() {},
+      resetNorth() {}, onRotate() {}, setTraffic() {}, canSatellite: false, setSatellite() {},
       onLongPress(cb) { map.on('contextmenu', (e) => cb(e.latlng.lat, e.latlng.lng)); }
     };
   }

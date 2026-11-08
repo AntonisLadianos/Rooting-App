@@ -36,7 +36,7 @@ input, textarea, .stop-full, .modal-body p { -webkit-user-select: text; user-sel
 
 #app { position: fixed; inset: 0; overflow: hidden; background: var(--bg); }
 /* Ο χάρτης πιάνει όλη την οθόνη· το κάτω όριό του ακολουθεί την κάρτα για να φαίνεται το λογότυπο/πνευματικά */
-#map { position: absolute; left: 0; right: 0; top: 0; bottom: var(--map-bottom, 0px); background: #dfe3e8; transition: bottom .25s ease; touch-action: none; }
+#map { position: absolute; z-index: 0; left: 0; right: 0; top: 0; bottom: var(--map-bottom, 0px); background: #dfe3e8; transition: bottom .25s ease; touch-action: none; }
 .map-ctrls { position: absolute; right: 12px; top: calc(var(--safe-top) + 12px); z-index: 500; display: flex; flex-direction: column; gap: 10px; }
 .map-fab { width: 48px; height: 48px; border-radius: 50%; border: 0; background: var(--card); color: var(--text); font-size: 22px;
   box-shadow: 0 2px 10px rgba(0,0,0,.22); cursor: pointer; display: grid; place-items: center; padding: 0; }
@@ -214,3 +214,58 @@ textarea { resize: vertical; margin-bottom: 10px; }
 
 .google-card { margin: 4px 0 10px; }
 .google-card p { margin: 6px 0; }
+
+/* ---- Κάρτα επόμενης στάσης (καθαρότερη) ---- */
+.next-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.next-remain { font-size: 12.5px; color: var(--muted); text-align: right; }
+.progress { height: 5px; background: var(--line); border-radius: 3px; margin: 6px 0 8px; overflow: hidden; }
+.progress > div { height: 100%; width: 0; background: var(--success); border-radius: 3px; transition: width .3s; }
+.next-actions { grid-template-columns: 1fr 1fr; }
+.next-actions:has(.call-btn:not(.hidden)) { grid-template-columns: 1fr 1fr 56px; }
+.call-btn { padding: 0; font-size: 22px; }
+.chips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; }
+.chip { display: flex; align-items: center; justify-content: center; text-align: center; min-height: 44px; padding: 6px 4px;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; font-size: 12.5px;
+  font-weight: 600; line-height: 1.2; text-decoration: none; cursor: pointer; }
+.chip:active { background: var(--line); }
+.batch-bar { margin-top: 10px; padding: 10px; border-radius: 12px; background: rgba(37,99,235,.1); border: 1px solid rgba(37,99,235,.35); }
+.batch-text { font-size: 13.5px; font-weight: 600; margin-bottom: 8px; }
+.batch-btns { display: grid; grid-template-columns: 1fr 48px; gap: 8px; }
+
+/* ---- Λίστα με σύρσιμο ---- */
+.stop-row { position: relative; margin-bottom: 8px; border-radius: var(--radius); overflow: hidden; list-style: none; }
+.stop-row .stop { margin-bottom: 0; position: relative; z-index: 1; touch-action: pan-y; }
+.sw-bg { position: absolute; inset: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 18px;
+  font-weight: 700; color: #fff; background: var(--line); }
+.sw-bg span { opacity: 0; transition: opacity .15s; }
+.stop-row.sw-r .sw-bg { background: var(--success); }
+.stop-row.sw-r .sw-done { opacity: .7; }
+.stop-row.sw-l .sw-bg { background: var(--danger); }
+.stop-row.sw-l .sw-del { opacity: .7; }
+.stop-row.sw-armed .sw-bg span { opacity: 1; }
+.swipe-hint { text-align: center; margin: 2px 0 8px; }
+.done-box { margin: 6px 0 10px; }
+.done-box summary { cursor: pointer; padding: 10px 4px; font-weight: 600; color: var(--success); list-style: none; }
+.done-box summary::-webkit-details-marker { display: none; }
+.done-box summary::after { content: ' ›'; color: var(--muted); }
+.done-box[open] summary::after { content: ' ⌄'; }
+.stop.done { opacity: .6; }
+
+/* ---- Καρτούλα πινέζας ---- */
+.map-popup { min-width: 210px; max-width: 260px; font: 15px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #111827; }
+.mp-title { font-weight: 700; margin-bottom: 4px; }
+.mp-note { font-size: 13px; color: #4b5563; margin-bottom: 6px; }
+.mp-btns { display: flex; gap: 6px; margin-top: 8px; }
+.mp-btns .btn { min-height: 40px; padding: 6px 10px; font-size: 14px; flex: 1; }
+.mp-btns .btn-ghost { flex: 0 0 auto; background: #f3f4f6; color: #111827; border-color: #e5e7eb; }
+
+/* ---- Toast με «Αναίρεση» ---- */
+.toast.with-btn { display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: left; }
+.toast-btn { flex: none; background: none; border: 0; color: #93c5fd; font: inherit; font-weight: 700; padding: 6px 4px; cursor: pointer; }
+
+.next-top .next-label, .next-remain { white-space: nowrap; }
+.next-remain { overflow: hidden; text-overflow: ellipsis; }
+.list-head { display: flex; align-items: center; flex-wrap: nowrap; }
+.list-head h2 { white-space: nowrap; }
+#doneCount { white-space: nowrap; font-size: 14px; }
+.list-clear { display: inline-flex; white-space: nowrap; min-height: 36px; padding: 4px 6px; }

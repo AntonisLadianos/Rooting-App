@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '9';
+  const APP_VERSION = '10';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // ---------- Κατάσταση ----------
@@ -346,7 +346,7 @@
     if (m < 60) return m + "'";
     return Math.floor(m / 60) + 'ω ' + String(m % 60).padStart(2, '0') + "'";
   }
-  function fmtKm(m) { return m < 1000 ? Math.round(m) + ' μ' : (m / 1000).toFixed(m < 10000 ? 1 : 0) + ' χλμ'; }
+  function fmtKm(m) { return m < 950 ? Math.round(m / 10) * 10 + ' μ' : (m / 1000).toFixed(m < 9950 ? 1 : 0) + ' χλμ'; }
   function fmtClock(ms) { return new Date(ms).toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' }); }
 
   // ETA για κάθε στάση με βάση τα σκέλη της διαδρομής
@@ -369,31 +369,39 @@
   function render() {
     const list = orderedStops();
     const etas = computeEtas(list);
-    const stopsEl = $('stops');
-    stopsEl.innerHTML = '';
+    const stopsEl = $('stops'), doneEl = $('doneStops');
+    stopsEl.innerHTML = ''; doneEl.innerHTML = '';
     const nextStop = S.route ? list.find((s) => !s.done) : null;
 
     list.forEach((s, i) => {
       const li = document.createElement('li');
-      li.className = 'stop' + (s.done ? ' done' : '') + (nextStop && nextStop.id === s.id ? ' current' : '');
+      li.className = 'stop-row';
       const eta = etas[s.id];
       const meta = [];
-      if (eta) meta.push(`🕒 ${fmtClock(eta.at)}`, `${fmtKm(eta.leg.distance)} · ${fmtDur(eta.leg.duration)}`);
+      if (eta && !s.done) meta.push(`🕒 ${fmtClock(eta.at)}`, `${fmtKm(eta.leg.distance)} · ${fmtDur(eta.leg.duration)}`);
       if (s.note) meta.push('📝 ' + s.note);
+      if (s.phone) meta.push('📞 ' + s.phone);
       li.innerHTML = `
-        <span class="num">${s.done ? '✓' : (S.route ? i + 1 : '•')}</span>
-        <span class="stop-body">
-          <span class="stop-title">${esc(title(s))}</span>
-          ${meta.length ? `<span class="stop-meta">${meta.map(esc).join('  ·  ')}</span>` : ''}
-        </span>
-        <span class="chev">›</span>`;
-      li.onclick = () => openStop(s.id);
-      stopsEl.appendChild(li);
+        <div class="sw-bg"><span class="sw-done">${s.done ? '↺ Επαναφορά' : '✓ Παραδόθηκε'}</span><span class="sw-del">🗑 Διαγραφή</span></div>
+        <div class="stop${s.done ? ' done' : ''}${nextStop && nextStop.id === s.id ? ' current' : ''}">
+          <span class="num">${s.done ? '✓' : (S.route ? i + 1 : '•')}</span>
+          <span class="stop-body">
+            <span class="stop-title">${esc(title(s))}</span>
+            ${meta.length ? `<span class="stop-meta">${meta.map(esc).join('  ·  ')}</span>` : ''}
+          </span>
+          <span class="chev">›</span>
+        </div>`;
+      attachSwipe(li, s);
+      (s.done ? doneEl : stopsEl).appendChild(li);
     });
+    const doneN = list.filter((s) => s.done).length;
+    $('doneBox').classList.toggle('hidden', !doneN);
+    $('doneSummary').textContent = `✓ Παραδόθηκαν (${doneN})`;
+    $('swipeHint').classList.toggle('hidden', !list.some((s) => !s.done));
 
     $('stopCount').textContent = S.stops.length;
     const done = S.stops.filter((s) => s.done).length;
-    $('doneCount').textContent = S.route && S.stops.length ? `${done}/${S.stops.length} ολοκληρώθηκαν` : '';
+    $('doneCount').textContent = S.route && S.stops.length ? `✓ ${done}/${S.stops.length}` : '';
     $('emptyHint').classList.toggle('hidden', S.stops.length > 0);
 
     $('startLabel').textContent = S.start ? S.start.label : '📍 Τρέχουσα τοποθεσία';
@@ -413,7 +421,16 @@
     if (nextStop) {
       card.classList.remove('hidden');
       const idx = list.indexOf(nextStop);
-      $('nextIdx').textContent = `· ${idx + 1} από ${list.length}`;
+      $('nextIdx').textContent = `${idx + 1}/${list.length}`;
+      // πρόοδος + τι απομένει
+      const pending = list.filter((x) => !x.done);
+      let remSec = 0, remM = 0;
+      list.forEach((x, k) => { if (!x.done && S.route.legs && S.route.legs[k]) { remSec += S.route.legs[k].duration + (S.settings.serviceMin || 0) * 60; remM += S.route.legs[k].distance; } });
+      $('nextRemain').textContent = `μένουν ${pending.length}` + (S.route.legs ? ` · ~${fmtDur(remSec)} · ${fmtKm(remM)}` : '');
+      $('nextProgress').style.width = Math.round((done / list.length) * 100) + '%';
+      const call = $('btnCallNext');
+      call.classList.toggle('hidden', !nextStop.phone);
+      if (nextStop.phone) call.href = 'tel:' + nextStop.phone.replace(/\s/g, '');
       $('nextTitle').textContent = title(nextStop);
       const eta = etas[nextStop.id];
       const sub = [];
@@ -422,12 +439,13 @@
       $('nextSub').textContent = sub.join(' · ');
       $('btnNavNext').href = navUrl(nextStop);
       if (navUrl(nextStop).startsWith('http')) $('btnNavNext').target = '_blank'; else $('btnNavNext').removeAttribute('target');
-      $('btnDoneNext').onclick = () => markDone(nextStop.id, true);
+      $('btnDoneNext').onclick = () => markDone(nextStop.id, true, true);
       $('btnSkipNext').onclick = () => skipStop(nextStop.id);
-      const n = nextChunk().length;
-      $('btnFullRoute').textContent = n > 1 ? `🗺 Όλη η διαδρομή στο Google Maps (${n} στάσεις)` : '🗺 Άνοιγμα στο Google Maps';
+      $('btnFullRoute').textContent = '🗺 ' + chunkLabel();
       $('btnFullRoute').href = googleFullRouteUrl();
-      $('btnReopt').textContent = done ? '⚡ Από τη θέση μου' : '⚡ Νέα βελτιστοποίηση';
+      $('btnFullRoute').onclick = () => startBatch();
+      $('btnReopt').textContent = done ? '⚡ Από εδώ' : '⚡ Νέα σειρά';
+      renderBatchBar(list);
     } else card.classList.add('hidden');
     document.body.classList.toggle('has-route', !!nextStop);
     if (typeof sheetState !== 'undefined' && sheetState === 'peek') requestAnimationFrame(() => setSheet('peek'));
@@ -443,7 +461,7 @@
       sum.innerHTML = `<div><b>${fmtKm(dist)}</b><small>απόσταση</small></div>
         <div><b>${fmtDur(dur)}</b><small>οδήγηση</small></div>
         <div><b>${fmtClock(finish)}</b><small>τέλος περίπου</small></div>`;
-      if (!nextStop) sum.innerHTML += `<div class="all-done">🎉 Ολοκληρώθηκαν όλες οι στάσεις!</div>`;
+      if (!nextStop) sum.innerHTML += `<div class="all-done">🎉 Παραδόθηκαν όλα!</div>`;
       sum.classList.remove('hidden');
     } else sum.classList.add('hidden');
 
@@ -460,7 +478,7 @@
       items.push({
         lat: s.lat, lng: s.lng, text: s.done ? '✓' : (S.route ? String(i + 1) : '•'),
         cls: s.done ? 'pin-done' : (isNext ? 'pin-next' : ''), title: title(s),
-        z: isNext ? 50 : (s.done ? 1 : 10), onClick: () => openStop(s.id)
+        z: isNext ? 50 : (s.done ? 1 : 10), onClick: () => stopPopup(s.id)
       });
     });
     if (S.endMode === 'fixed' && S.end) items.push({ lat: S.end.lat, lng: S.end.lng, text: '■', cls: 'pin-end', title: 'Τέλος', z: 2 });
@@ -522,9 +540,10 @@
   function openUrl(url) { window.location.href = url; }
 
   // ---------- Ενέργειες στάσεων ----------
-  function markDone(id, val) {
+  function markDone(id, val, undoable) {
     const s = S.stops.find((x) => x.id === id);
     if (!s) return;
+    if (undoable) offerUndo(val ? `✓ Παραδόθηκε: ${title(s).split(',')[0]}` : 'Η στάση επανήλθε');
     s.done = val; s.doneAt = val ? Date.now() : null;
     save(); render();
     if (val) {
@@ -560,7 +579,9 @@
     save(); render();
   }
 
-  function deleteStop(id) {
+  function deleteStop(id, undoable) {
+    const st = S.stops.find((x) => x.id === id);
+    if (undoable && st) offerUndo(`Διαγράφηκε: ${title(st).split(',')[0]}`);
     S.stops = S.stops.filter((s) => s.id !== id);
     if (S.route) {
       S.route.order = S.route.order.filter((x) => x !== id);
@@ -569,6 +590,119 @@
     }
     save(); render();
   }
+
+
+  // ---------- Αναίρεση ----------
+  let undoSnap = null, undoT = null;
+  function offerUndo(msg) {
+    undoSnap = JSON.stringify(S);
+    const t = $('toast');
+    t.innerHTML = '';
+    const span = document.createElement('span'); span.textContent = msg;
+    const b = document.createElement('button'); b.className = 'toast-btn'; b.textContent = 'Αναίρεση';
+    b.onclick = () => {
+      if (!undoSnap) return;
+      const keepSettings = S.settings;
+      S = JSON.parse(undoSnap); S.settings = keepSettings; undoSnap = null;
+      save(); render(); t.classList.add('hidden');
+    };
+    t.appendChild(span); t.appendChild(b);
+    t.classList.remove('hidden'); t.classList.add('with-btn');
+    clearTimeout(toastT); clearTimeout(undoT);
+    undoT = setTimeout(() => { t.classList.add('hidden'); t.classList.remove('with-btn'); undoSnap = null; }, 5000);
+  }
+
+  // ---------- Σύρσιμο στη λίστα: δεξιά = Παραδόθηκε, αριστερά = Διαγραφή ----------
+  function attachSwipe(li, s) {
+    const card = li.querySelector('.stop');
+    let x0 = 0, y0 = 0, dx = 0, mode = null;
+    card.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; mode = null; card.style.transition = 'none'; }, { passive: true });
+    card.addEventListener('touchmove', (e) => {
+      const ddx = e.touches[0].clientX - x0, ddy = e.touches[0].clientY - y0;
+      if (!mode) {
+        if (Math.abs(ddx) > 10 && Math.abs(ddx) > Math.abs(ddy) * 1.3) mode = 'swipe';
+        else if (Math.abs(ddy) > 10) mode = 'no';
+        else return;
+      }
+      if (mode !== 'swipe') return;
+      e.preventDefault();
+      dx = ddx;
+      card.style.transform = `translateX(${dx}px)`;
+      li.classList.toggle('sw-r', dx > 0); li.classList.toggle('sw-l', dx < 0);
+      li.classList.toggle('sw-armed', Math.abs(dx) > 90);
+    }, { passive: false });
+    card.addEventListener('touchend', () => {
+      card.style.transition = 'transform .2s';
+      if (mode === 'swipe' && Math.abs(dx) > 90) {
+        card.style.transform = `translateX(${dx > 0 ? '100%' : '-100%'})`;
+        if (navigator.vibrate) navigator.vibrate(15);
+        setTimeout(() => { if (dx > 0) markDone(s.id, !s.done, true); else deleteStop(s.id, true); }, 160);
+      } else { card.style.transform = ''; li.classList.remove('sw-r', 'sw-l', 'sw-armed'); }
+      if (mode === 'swipe') card.dataset.swiped = '1';
+    });
+    card.addEventListener('click', () => {
+      if (card.dataset.swiped) { delete card.dataset.swiped; return; }
+      openStop(s.id);
+    });
+  }
+
+  // ---------- Καρτούλα πάνω στην πινέζα ----------
+  function stopPopup(id) {
+    const s = S.stops.find((x) => x.id === id);
+    if (!s || !mv) return;
+    const el = document.createElement('div');
+    el.className = 'map-popup';
+    const url = navUrl(s);
+    el.innerHTML = `<div class="mp-title">${esc(title(s))}</div>
+      ${s.note ? `<div class="mp-note">📝 ${esc(s.note)}</div>` : ''}
+      <div class="mp-btns">
+        <a class="btn btn-primary" href="${esc(url)}"${url.startsWith('http') ? ' target="_blank" rel="noopener"' : ''}>➤</a>
+        <button class="btn ${s.done ? 'btn-ghost' : 'btn-success'}" data-a="done">${s.done ? '↺' : '✓ Παραδόθηκε'}</button>
+        ${s.phone ? `<a class="btn btn-ghost" href="tel:${esc(s.phone.replace(/\s/g, ''))}">📞</a>` : ''}
+        <button class="btn btn-ghost" data-a="more">⋯</button>
+      </div>`;
+    el.querySelector('[data-a="done"]').onclick = () => { mv.closePopup(); markDone(s.id, !s.done, true); };
+    el.querySelector('[data-a="more"]').onclick = () => { mv.closePopup(); openStop(s.id); };
+    mv.popup(s.lat, s.lng, el);
+  }
+
+  // ---------- Πακέτα 10 στάσεων για το Google Maps ----------
+  function chunkLabel() {
+    const list = orderedStops(), ch = nextChunk();
+    if (!ch.length) return 'Google Maps';
+    const a = list.indexOf(ch[0]) + 1, b = list.indexOf(ch[ch.length - 1]) + 1;
+    return ch.length > 1 ? `Στάσεις ${a}–${b}` : `Στάση ${a}`;
+  }
+  function startBatch() {
+    const ch = nextChunk();
+    S.batch = { ids: ch.map((x) => x.id), label: chunkLabel() };
+    save();
+    setTimeout(render, 300);
+  }
+  function renderBatchBar(list) {
+    const bar = $('batchBar');
+    const b = S.batch;
+    const open = b && b.ids.some((id) => { const x = list.find((y) => y.id === id); return x && !x.done; });
+    bar.classList.toggle('hidden', !open);
+    if (!open) return;
+    const restAfter = list.filter((x) => !x.done && !b.ids.includes(x.id)).slice(0, GM_CHUNK);
+    $('batchText').textContent = `Στο Google Maps: ${b.label}`;
+    $('btnBatchDone').textContent = restAfter.length ? `✓ Τελείωσα · Επόμενες ${restAfter.length} ➜` : '✓ Τελείωσα αυτές';
+    $('btnBatchDone').onclick = () => {
+      offerUndo(`✓ ${b.label} παραδόθηκαν`);
+      b.ids.forEach((id) => { const x = S.stops.find((y) => y.id === id); if (x && !x.done) { x.done = true; x.doneAt = Date.now(); } });
+      S.batch = null; save(); render();
+      if (nextChunk().length) { const url = googleFullRouteUrl(); startBatch(); openUrl(url); }
+    };
+    $('btnBatchCancel').onclick = () => { S.batch = null; save(); render(); };
+  }
+
+  // ---------- Δορυφόρος ----------
+  $('btnSat').onclick = () => {
+    S.settings.satellite = !S.settings.satellite; save();
+    mv.setSatellite(S.settings.satellite);
+    $('btnSat').classList.toggle('on', !!S.settings.satellite);
+  };
 
   // ---------- Modal ----------
   function openModal(title, html, onMount) {
@@ -589,7 +723,7 @@
       ${s.orig ? `<p class="muted small">Στον χάρτη: ${esc(s.label)}${s.exact === false ? ' (βρέθηκε μόνο ο δρόμος — η πλοήγηση θα ψάξει τον ακριβή αριθμό)' : ''}</p>` : ''}
       <div class="grid2">
         <a class="btn btn-primary" href="${esc(navUrl(s))}"${navUrl(s).startsWith('http') ? ' target="_blank" rel="noopener"' : ''}>➤ Πλοήγηση</a>
-        <button class="btn ${s.done ? 'btn-ghost' : 'btn-success'}" id="mDone">${s.done ? '↺ Αναίρεση' : '✓ Ολοκληρώθηκε'}</button>
+        <button class="btn ${s.done ? 'btn-ghost' : 'btn-success'}" id="mDone">${s.done ? '↺ Δεν παραδόθηκε' : '✓ Παραδόθηκε'}</button>
       </div>
       <label class="field"><span>Σημείωση</span><input id="mNote" type="text" value="${esc(s.note)}" placeholder="π.χ. 3ος όροφος, κουδούνι Παπαδόπουλος"></label>
       <label class="field"><span>Τηλέφωνο</span><input id="mPhone" type="tel" value="${esc(s.phone)}" placeholder="69…"></label>
@@ -602,10 +736,10 @@
       const persist = () => { s.note = b.querySelector('#mNote').value.trim(); s.phone = b.querySelector('#mPhone').value.trim(); save(); render(); };
       b.querySelector('#mNote').addEventListener('change', persist);
       b.querySelector('#mPhone').addEventListener('change', persist);
-      b.querySelector('#mDone').onclick = () => { persist(); markDone(s.id, !s.done); closeModal(); };
+      b.querySelector('#mDone').onclick = () => { persist(); markDone(s.id, !s.done, true); closeModal(); };
       b.querySelector('#mUp').onclick = () => { persist(); moveStop(s.id, -1); };
       b.querySelector('#mDown').onclick = () => { persist(); moveStop(s.id, 1); };
-      b.querySelector('#mDel').onclick = () => { if (confirm('Διαγραφή στάσης;')) { deleteStop(s.id); closeModal(); } };
+      b.querySelector('#mDel').onclick = () => { deleteStop(s.id, true); closeModal(); };
     });
   }
 
@@ -1036,6 +1170,7 @@
   let toastT = null;
   function toast(msg) {
     const t = $('toast');
+    t.classList.remove('with-btn'); undoSnap = null;
     t.textContent = msg; t.classList.remove('hidden');
     clearTimeout(toastT);
     toastT = setTimeout(() => t.classList.add('hidden'), 3200);
@@ -1086,11 +1221,11 @@
         <button class="btn btn-primary d-mid" id="dNav">➤ Πλοήγηση</button>
         <button class="btn btn-ghost d-mid" id="dDoneOnly">✓ Μόνο παραδόθηκε</button>
       </div>
-      <button class="btn btn-ghost d-mid d-wide" id="dFull">🗺 Όλη η διαδρομή στο Google Maps${n > 1 ? ` (${n} στάσεις)` : ''}</button>
+      <button class="btn btn-ghost d-mid d-wide" id="dFull">🗺 ${chunkLabel()} στο Google Maps</button>
       <button class="btn btn-link" id="dSkip">Παράλειψη για αργότερα</button>`;
     $('dNav').onclick = () => openUrl(navUrl(next));
-    $('dFull').onclick = () => openUrl(googleFullRouteUrl());
-    $('dDoneOnly').onclick = () => markDone(next.id, true);
+    $('dFull').onclick = () => { const u = googleFullRouteUrl(); startBatch(); openUrl(u); };
+    $('dDoneOnly').onclick = () => markDone(next.id, true, true);
     $('dSkip').onclick = () => skipStop(next.id);
     $('dDoneGo').onclick = () => {
       markDone(next.id, true);
@@ -1140,18 +1275,20 @@
   // ο browser μερικές φορές «σπρώχνει» τη σελίδα όταν ανοίγει το πληκτρολόγιο — την επαναφέρουμε
   $('app').addEventListener('scroll', () => { $('app').scrollTop = 0; });
   (function sheetGestures() {
-    let y0 = 0, t0 = 0, startY = 0, mode = null, fromHandle = false, lastY = 0, lastT = 0, vel = 0;
+    let y0 = 0, x0s = 0, t0 = 0, startY = 0, mode = null, fromHandle = false, lastY = 0, lastT = 0, vel = 0;
     const order = ['peek', 'half', 'full'];
     sheet.addEventListener('touchstart', (e) => {
       if (e.touches.length !== 1) return;
-      y0 = lastY = e.touches[0].clientY; t0 = lastT = Date.now(); startY = sheetY; mode = null; vel = 0;
+      y0 = lastY = e.touches[0].clientY; x0s = e.touches[0].clientX; t0 = lastT = Date.now(); startY = sheetY; mode = null; vel = 0;
       fromHandle = !!e.target.closest('.sheet-handle');
     }, { passive: true });
     sheet.addEventListener('touchmove', (e) => {
       if (e.touches.length !== 1) return;
       const y = e.touches[0].clientY, dy = y - y0;
       if (!mode) {
-        if (Math.abs(dy) < 6) return;
+        const dxs = e.touches[0].clientX - x0s;
+        if (Math.abs(dy) < 6 && Math.abs(dxs) < 6) return;
+        if (Math.abs(dxs) > Math.abs(dy) && !fromHandle) { mode = 'h'; return; } // οριζόντιο σύρσιμο στάσης
         if (fromHandle || sheetState !== 'full') mode = 'drag';
         else if (sheetBody.scrollTop <= 0 && dy > 0) mode = 'drag';
         else mode = 'scroll';
@@ -1212,6 +1349,8 @@
     if (!mv) mv = RootingMapView.createLeaflet(el, center);
     mv.onLongPress(onMapLongPress);
     $('btnTraffic').classList.toggle('hidden', !mv.canTraffic);
+    $('btnSat').classList.toggle('hidden', !mv.canSatellite);
+    if (mv.canSatellite && S.settings.satellite) { mv.setSatellite(true); $('btnSat').classList.add('on'); }
     if (mv.canRotate) mv.onRotate((rot) => $('btnNorth').classList.toggle('hidden', !rot));
     showMe();
   }
@@ -1222,7 +1361,7 @@
       const el = $('map').cloneNode(false); $('map').replaceWith(el);
       mv = RootingMapView.createLeaflet(el, DEFAULT_CENTER);
       mv.onLongPress(onMapLongPress);
-      $('btnTraffic').classList.add('hidden'); $('btnNorth').classList.add('hidden');
+      $('btnTraffic').classList.add('hidden'); $('btnNorth').classList.add('hidden'); $('btnSat').classList.add('hidden');
       render(); fitAll(); showMe();
     }
   }
