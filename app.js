@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '23';
+  const APP_VERSION = '24';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // ---------- Κατάσταση ----------
@@ -1513,8 +1513,18 @@
     sheet.style.transform = `translateY(${y}px)`;
     document.documentElement.style.setProperty('--sheet-top', y + 'px');
   }
+  // Οριζόντια οθόνη (κινητό στη βάση): η λίστα γίνεται στήλη αριστερά, ο χάρτης δεξιά
+  function isLand() { return window.innerWidth > window.innerHeight && window.innerHeight < 560; }
   function setSheet(state, animate = true) {
     sheetState = state;
+    document.body.classList.toggle('land', isLand());
+    if (isLand()) {
+      sheet.classList.add('full');
+      sheet.style.transform = 'none';
+      document.documentElement.style.setProperty('--sheet-top', '0px');
+      document.documentElement.style.setProperty('--map-bottom', '0px');
+      return;
+    }
     sheet.classList.toggle('full', state === 'full');
     if (state !== 'full') sheetBody.scrollTop = 0;
     applySheet(snapY(state), animate);
@@ -1528,12 +1538,12 @@
     let y0 = 0, x0s = 0, t0 = 0, startY = 0, mode = null, fromHandle = false, lastY = 0, lastT = 0, vel = 0;
     const order = ['peek', 'half', 'full'];
     sheet.addEventListener('touchstart', (e) => {
-      if (e.touches.length !== 1) return;
+      if (e.touches.length !== 1 || isLand()) { mode = 'scroll'; return; }
       y0 = lastY = e.touches[0].clientY; x0s = e.touches[0].clientX; t0 = lastT = Date.now(); startY = sheetY; mode = null; vel = 0;
       fromHandle = !!e.target.closest('.sheet-handle');
     }, { passive: true });
     sheet.addEventListener('touchmove', (e) => {
-      if (e.touches.length !== 1) return;
+      if (e.touches.length !== 1 || isLand()) return;
       const y = e.touches[0].clientY, dy = y - y0;
       if (!mode) {
         const dxs = e.touches[0].clientX - x0s;
@@ -1578,6 +1588,7 @@
     });
   })();
   window.addEventListener('resize', () => setSheet(sheetState, false));
+  window.addEventListener('orientationchange', () => setTimeout(() => { setSheet(sheetState, false); if (!RootingNav.active()) fitAll(); }, 350));
   // πληκτρολόγιο: η αναζήτηση ανεβαίνει πάνω για να μην κρύβεται
   searchEl.addEventListener('focus', () => setSheet('full'));
   $('btnReopt').onclick = optimize;
