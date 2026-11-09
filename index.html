@@ -22,11 +22,11 @@
 
     <!-- Κουμπιά πάνω στον χάρτη (πάνω δεξιά) -->
     <div class="map-ctrls">
-      <button id="btnSettings" class="map-fab" title="Ρυθμίσεις" aria-label="Ρυθμίσεις">⚙︎</button>
-      <button id="btnLocate" class="map-fab" title="Η θέση μου" aria-label="Η θέση μου">◎</button>
-      <button id="btnTraffic" class="map-fab hidden" title="Κίνηση" aria-label="Κίνηση στους δρόμους">🚦</button>
-      <button id="btnSat" class="map-fab hidden" title="Δορυφόρος" aria-label="Δορυφορικός χάρτης">🛰</button>
-      <button id="btnNorth" class="map-fab hidden" title="Βορράς" aria-label="Επαναφορά προσανατολισμού">🧭</button>
+      <button id="btnSettings" class="map-fab" title="Ρυθμίσεις" aria-label="Ρυθμίσεις"><i data-ic="settings"></i></button>
+      <button id="btnLocate" class="map-fab" title="Η θέση μου" aria-label="Η θέση μου"><i data-ic="locate"></i></button>
+      <button id="btnTraffic" class="map-fab hidden" title="Κίνηση" aria-label="Κίνηση στους δρόμους"><i data-ic="traffic"></i></button>
+      <button id="btnSat" class="map-fab hidden" title="Δορυφόρος" aria-label="Δορυφορικός χάρτης"><i data-ic="layers"></i></button>
+      <button id="btnNorth" class="map-fab hidden" title="Βορράς" aria-label="Επαναφορά προσανατολισμού"><i data-ic="compass"></i></button>
     </div>
 
     <!-- Κάρτα που σέρνεται (κάτω / μέση / πάνω) -->
@@ -46,9 +46,9 @@
           <div id="nextPkgs" class="next-pkgs"></div>
           <div id="nextSub" class="next-sub"></div>
           <div class="next-actions" id="nextActions">
-            <a id="btnNavNext" class="btn btn-primary btn-lg">➤ Πλοήγηση</a>
-            <button id="btnDoneNext" class="btn btn-success btn-lg">✓ Παραδόθηκε</button>
-            <a id="btnCallNext" class="btn btn-ghost btn-lg call-btn hidden" aria-label="Κλήση">📞</a>
+            <a id="btnNavNext" class="btn btn-primary btn-lg"><i data-ic="nav"></i> Πλοήγηση</a>
+            <button id="btnDoneNext" class="btn btn-success btn-lg"><i data-ic="check"></i> Παραδόθηκε</button>
+            <a id="btnCallNext" class="btn btn-ghost btn-lg call-btn hidden" aria-label="Κλήση"><i data-ic="phone"></i></a>
           </div>
           <div id="batchBar" class="batch-bar hidden">
             <div id="batchText" class="batch-text"></div>
@@ -58,10 +58,10 @@
             </div>
           </div>
           <div class="chips">
-            <a id="btnFullRoute" class="chip">🗺 Google Maps</a>
-            <button id="btnDrive" class="chip">🚗 Οδήγηση</button>
-            <button id="btnFailNext" class="chip chip-fail">✗ Αποτυχία</button>
-            <button id="btnReopt" class="chip">⚡ Νέα σειρά</button>
+            <a id="btnFullRoute" class="chip"><i data-ic="map"></i> Google Maps</a>
+            <button id="btnDrive" class="chip"><i data-ic="car"></i> Οδήγηση</button>
+            <button id="btnFailNext" class="chip chip-fail"><i data-ic="x"></i> Αποτυχία</button>
+            <button id="btnReopt" class="chip"><i data-ic="zap"></i> Νέα σειρά</button>
           </div>
         </div>
 
@@ -70,12 +70,13 @@
         <!-- Προσθήκη διευθύνσεων -->
         <div id="addBlock">
           <div class="search-wrap">
-            <input id="search" type="search" placeholder="🔍 Πρόσθεσε διεύθυνση…" autocomplete="off" enterkeyhint="search">
+            <span class="search-ic"><i data-ic="search"></i></span>
+            <input id="search" type="search" placeholder="Πρόσθεσε διεύθυνση…" autocomplete="off" enterkeyhint="search">
             <ul id="suggestions" class="suggestions hidden"></ul>
           </div>
           <div class="row-btns add-row">
-            <button id="btnShot" class="btn btn-primary">📷 Screenshot</button>
-            <button id="btnPaste" class="btn btn-ghost">📋 Λίστα</button>
+            <button id="btnShot" class="btn btn-primary"><i data-ic="camera"></i> Screenshot</button>
+            <button id="btnPaste" class="btn btn-ghost"><i data-ic="list"></i> Λίστα</button>
           </div>
           <input id="shotInput" type="file" accept="image/*" multiple hidden>
         </div>
@@ -84,7 +85,7 @@
         <div class="card endpoints">
           <button id="startRow" class="endpoint">
             <span class="dot dot-start"></span>
-            <span class="ep-text"><small>Αφετηρία</small><span id="startLabel">📍 Τρέχουσα τοποθεσία</span></span>
+            <span class="ep-text"><small>Αφετηρία</small><span id="startLabel">Τρέχουσα τοποθεσία</span></span>
             <span class="chev">›</span>
           </button>
           <button id="endRow" class="endpoint">
@@ -97,7 +98,7 @@
         <div class="list-head">
           <h2>Στάσεις <span id="stopCount" class="badge">0</span></h2>
           <span id="doneCount" class="muted"></span>
-          <button id="btnClear" class="btn btn-link list-clear">🗑 Καθαρισμός</button>
+          <button id="btnClear" class="btn btn-link list-clear"><i data-ic="trash"></i> Καθαρισμός</button>
         </div>
         <ol id="stops" class="stops"></ol>
         <details id="failBox" class="done-box fail-box hidden" open>
@@ -116,7 +117,7 @@
     </section>
 
     <div id="optimizeBar">
-      <button id="btnOptimize" class="btn btn-primary btn-block btn-lg">⚡ Βελτιστοποίηση διαδρομής</button>
+      <button id="btnOptimize" class="btn btn-primary btn-block btn-lg"><i data-ic="zap"></i> Βελτιστοποίηση διαδρομής</button>
     </div>
   </div>
 
@@ -145,13 +146,13 @@
       <div id="navThen" class="nav-then"></div>
     </div>
     <div id="navArrive" class="nav-arrive hidden">
-      <div class="na-label">🏁 Έφτασες</div>
+      <div class="na-label"><i data-ic="flag"></i> Έφτασες</div>
       <div id="navArriveTitle" class="na-title"></div>
       <div id="navArriveNote" class="na-note"></div>
-      <button id="navDone" class="btn btn-success na-big">✓ Παραδόθηκε<small>και πάμε στην επόμενη</small></button>
+      <button id="navDone" class="btn btn-success na-big"><span><i data-ic="check"></i> Παραδόθηκε</span><small>και πάμε στην επόμενη</small></button>
       <div class="na-row">
-        <button id="navFail" class="btn btn-fail">✗ Αποτυχία</button>
-        <a id="navCall" class="btn btn-ghost hidden">📞 Κλήση</a>
+        <button id="navFail" class="btn btn-fail"><i data-ic="x"></i> Αποτυχία</button>
+        <a id="navCall" class="btn btn-ghost hidden"><i data-ic="phone"></i> Κλήση</a>
       </div>
     </div>
     <div class="nav-bottom">
@@ -161,9 +162,9 @@
         <div class="nav-remain"><b id="navRemain"></b><small id="navDest"></small></div>
       </div>
       <div class="nav-btns">
-        <button id="navExit" class="btn nav-exit">✕ Τέλος</button>
-        <button id="navMute" class="btn nav-ic">🔊</button>
-        <button id="navDoneMan" class="btn nav-ic nav-ok">✓</button>
+        <button id="navExit" class="btn nav-exit"><i data-ic="x"></i> Τέλος</button>
+        <button id="navMute" class="btn nav-ic"><i data-ic="vol"></i></button>
+        <button id="navDoneMan" class="btn nav-ic nav-ok"><i data-ic="check"></i></button>
       </div>
     </div>
   </div>
@@ -172,7 +173,7 @@
   <div id="drive" class="drive hidden">
     <div class="d-head">
       <span id="dProgress"></span>
-      <button id="dClose" class="btn btn-ghost d-close">✕ Έξοδος</button>
+      <button id="dClose" class="btn btn-ghost d-close"><i data-ic="x"></i> Έξοδος</button>
     </div>
     <div id="dBody" class="d-body"></div>
   </div>
@@ -180,6 +181,7 @@
   <div id="toast" class="toast hidden"></div>
   <div id="busy" class="busy hidden"><div class="spinner"></div><div id="busyText">Υπολογισμός…</div></div>
 
+  <script src="icons.js"></script>
   <script src="vendor/leaflet/leaflet.js"></script>
   <script src="solver.js"></script>
   <script src="geo.js"></script>

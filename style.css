@@ -383,3 +383,31 @@ body.navigating #map { bottom: calc(132px + var(--safe-bottom)) !important; }
   .d-big { min-height: 84px; font-size: 22px; margin-top: 0; }
   .d-mid { min-height: 52px; font-size: 16px; }
 }
+
+/* ---- Εικονίδια ---- */
+.ic { width: 1.15em; height: 1.15em; flex: none; vertical-align: -0.2em; display: inline-block; }
+[data-ic] { display: inline-flex; font-style: normal; }
+.btn .ic, .chip .ic { margin-right: 2px; }
+.map-fab .ic { width: 22px; height: 22px; }
+.chip { flex-direction: column; gap: 3px; }
+.chip .ic { width: 20px; height: 20px; margin: 0; }
+.stop-meta .ic { width: 13px; height: 13px; vertical-align: -2px; opacity: .8; }
+.stop-meta .sep { margin: 0 6px; opacity: .5; }
+.pkg-inline { color: #b45309; }
+.pkg-badge .ic { width: 15px; height: 15px; vertical-align: -2px; }
+.search-wrap { position: relative; }
+.search-ic { position: absolute; left: 13px; top: 13px; color: var(--muted); pointer-events: none; z-index: 1; }
+.search-ic .ic { width: 20px; height: 20px; }
+#search { padding-left: 42px; }
+.nav-flag { width: 44px; height: 44px; vertical-align: middle; }
+.nav-ic .ic { width: 24px; height: 24px; }
+.na-big span, .d-big span { display: inline-flex; align-items: center; gap: 8px; }
+.na-label .ic { width: 16px; height: 16px; }
+.done-box summary .ic { width: 16px; height: 16px; vertical-align: -3px; }
+.sw-bg .ic { width: 18px; height: 18px; vertical-align: -4px; }
+.list-clear .ic { width: 16px; height: 16px; }
+.mp-btns .btn .ic { width: 18px; height: 18px; margin: 0; }
+.mp-note .ic { width: 14px; height: 14px; vertical-align: -2px; }
+.people .ic { width: 15px; height: 15px; vertical-align: -2px; }
+.d-note .ic { width: 18px; height: 18px; vertical-align: -3px; }
+.found-body small .ic { width: 13px; height: 13px; vertical-align: -2px; }

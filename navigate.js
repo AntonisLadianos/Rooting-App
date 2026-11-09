@@ -166,7 +166,7 @@
     el('navText').textContent = 'Υπολογισμός διαδρομής…';
     el('navArrow').textContent = '…'; el('navDist').textContent = ''; el('navThen').textContent = '';
     el('navDest').textContent = opts.dest.title || '';
-    el('navMute').textContent = muted ? '🔇' : '🔊';
+    el('navMute').innerHTML = global.ic ? global.ic(muted ? 'mute' : 'vol') : (muted ? '🔇' : '🔊');
     try { if (navigator.wakeLock) cur.wake = await navigator.wakeLock.request('screen'); } catch (e) { /* ignore */ }
     say('Ξεκινάμε', true); // «ξεκλειδώνει» τη φωνή στο iPhone (χρειάζεται πάτημα χρήστη)
 
@@ -228,7 +228,7 @@
     const st = r.steps[c.stepIdx], nx = r.steps[c.stepIdx + 1];
     const toMan = Math.max(0, st.at - loc.along);
     const remain = Math.max(0, r.total - loc.along);
-    el('navArrow').textContent = st.arrow;
+    if (st.step.maneuver.type === 'arrive' && global.ic) el('navArrow').innerHTML = global.ic('flag', 'nav-flag'); else el('navArrow').textContent = st.arrow;
     el('navDist').textContent = fmtDist(toMan);
     el('navText').textContent = st.text;
     el('navThen').textContent = nx && nx.step.maneuver.type !== 'arrive' && nx.at - st.at < 400 ? `Μετά: ${nx.arrow} ${nx.text}` : '';
@@ -263,7 +263,7 @@
     say('Έφτασες. ' + (c.dest.title ? c.dest.title.split(',')[0] : ''), true);
     if (navigator.vibrate) navigator.vibrate([60, 80, 60]);
     el('navText').textContent = 'Έφτασες στον προορισμό';
-    el('navArrow').textContent = '🏁'; el('navDist').textContent = ''; el('navThen').textContent = '';
+    el('navArrow').innerHTML = global.ic ? global.ic('flag', 'nav-flag') : '🏁'; el('navDist').textContent = ''; el('navThen').textContent = '';
     if (c.onArrive) c.onArrive();
   }
 
@@ -283,7 +283,7 @@
   function toggleMute() {
     muted = !muted;
     if (muted && global.speechSynthesis) speechSynthesis.cancel();
-    el('navMute').textContent = muted ? '🔇' : '🔊';
+    el('navMute').innerHTML = global.ic ? global.ic(muted ? 'mute' : 'vol') : (muted ? '🔇' : '🔊');
     return muted;
   }
   document.addEventListener('visibilitychange', () => {

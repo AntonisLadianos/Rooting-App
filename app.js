@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '24';
+  const APP_VERSION = '25';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // ---------- Κατάσταση ----------
@@ -447,18 +447,18 @@
       li.className = 'stop-row';
       const eta = etas[s.id];
       const meta = [];
-      if (eta && !s.done) meta.push(`🕒 ${fmtClock(eta.at)}`, `${fmtKm(eta.leg.distance)} · ${fmtDur(eta.leg.duration)}`);
-      if (s.pkgs > 1) meta.push('📦 ' + pkgsText(s.pkgs));
-      if (whoText(s)) meta.push('👤 ' + whoText(s));
-      if (s.note) meta.push('📝 ' + s.note);
-      if (s.phone) meta.push('📞 ' + s.phone);
+      if (eta && !s.done) meta.push(`${ic('clock')} ${fmtClock(eta.at)}`, `${fmtKm(eta.leg.distance)} · ${fmtDur(eta.leg.duration)}`);
+      if (s.pkgs > 1) meta.push(`<b class="pkg-inline">${ic('package')} ${pkgsText(s.pkgs)}</b>`);
+      if (whoText(s)) meta.push(`${ic('user')} ${esc(whoText(s))}`);
+      if (s.note) meta.push(`${ic('note')} ${esc(s.note)}`);
+      if (s.phone) meta.push(`${ic('phone')} ${esc(s.phone)}`);
       li.innerHTML = `
-        <div class="sw-bg"><span class="sw-done">${s.done ? '↺ Επαναφορά' : '✓ Παραδόθηκε'}</span><span class="sw-del">🗑 Διαγραφή</span></div>
+        <div class="sw-bg"><span class="sw-done">${s.done ? ic('restore') + ' Επαναφορά' : ic('check') + ' Παραδόθηκε'}</span><span class="sw-del">${ic('trash')} Διαγραφή</span></div>
         <div class="stop${s.done ? ' done' : ''}${s.failed ? ' failed' : ''}${nextStop && nextStop.id === s.id ? ' current' : ''}">
           <span class="num">${s.failed ? '✗' : (s.done ? '✓' : (S.route ? i + 1 : '•'))}</span>
           <span class="stop-body">
             <span class="stop-title">${esc(title(s))}</span>
-            ${meta.length ? `<span class="stop-meta">${meta.map(esc).join('  ·  ')}</span>` : ''}
+            ${meta.length ? `<span class="stop-meta">${meta.join('<span class="sep">·</span>')}</span>` : ''}
           </span>
           <span class="chev">›</span>
         </div>`;
@@ -467,9 +467,9 @@
     });
     const doneN = list.filter((s) => s.done && !s.failed).length, failN = list.filter((s) => s.failed).length;
     $('doneBox').classList.toggle('hidden', !doneN);
-    $('doneSummary').textContent = `✓ Παραδόθηκαν (${doneN})`;
+    $('doneSummary').innerHTML = `${ic('check')} Παραδόθηκαν (${doneN})`;
     $('failBox').classList.toggle('hidden', !failN);
-    $('failSummary').textContent = `✗ Αποτυχημένα (${failN})`;
+    $('failSummary').innerHTML = `${ic('x')} Αποτυχημένα (${failN})`;
     $('swipeHint').classList.toggle('hidden', !list.some((s) => !s.done));
 
     $('stopCount').textContent = S.stops.length;
@@ -478,16 +478,14 @@
     $('doneCount').textContent = S.route && S.stops.length ? `✓ ${done - failedN}/${S.stops.length}` + (failedN ? ` · ✗ ${failedN}` : '') : '';
     $('emptyHint').classList.toggle('hidden', S.stops.length > 0);
 
-    $('startLabel').textContent = S.start ? S.start.label : '📍 Τρέχουσα τοποθεσία';
-    $('endLabel').textContent = S.endMode === 'cycle' ? '↩︎ Επιστροφή στην αφετηρία'
+    $('startLabel').textContent = S.start ? S.start.label : 'Τρέχουσα τοποθεσία';
+    $('endLabel').textContent = S.endMode === 'cycle' ? 'Επιστροφή στην αφετηρία'
       : S.endMode === 'fixed' && S.end ? S.end.label : 'Όπου τελειώσει η τελευταία στάση';
 
     // Κουμπί βελτιστοποίησης
     const btn = $('btnOptimize');
     const remaining = S.stops.filter((s) => !s.done).length;
-    if (S.route && remaining && done) btn.textContent = '⚡ Νέα βελτιστοποίηση από τη θέση μου';
-    else if (S.route) btn.textContent = '⚡ Ξανά βελτιστοποίηση';
-    else btn.textContent = '⚡ Βελτιστοποίηση διαδρομής';
+    btn.innerHTML = ic('zap') + ' ' + (S.route && remaining && done ? 'Νέα βελτιστοποίηση από τη θέση μου' : (S.route ? 'Ξανά βελτιστοποίηση' : 'Βελτιστοποίηση διαδρομής'));
     btn.disabled = remaining === 0;
 
     // Κάρτα επόμενης στάσης
@@ -506,7 +504,7 @@
       call.classList.toggle('hidden', !nextStop.phone);
       if (nextStop.phone) call.href = 'tel:' + nextStop.phone.replace(/\s/g, '');
       $('nextTitle').textContent = title(nextStop);
-      $('nextPkgs').textContent = nextStop.pkgs ? '📦 ' + pkgsText(nextStop.pkgs) : '';
+      $('nextPkgs').innerHTML = nextStop.pkgs ? ic('package') + ' ' + pkgsText(nextStop.pkgs) : '';
       $('nextPkgs').classList.toggle('multi', nextStop.pkgs > 1);
       const eta = etas[nextStop.id];
       const sub = [];
@@ -517,10 +515,10 @@
       bindNavLink($('btnNavNext'), nextStop);
       $('btnDoneNext').onclick = () => markDone(nextStop.id, true, true);
       $('btnFailNext').onclick = () => markFailed(nextStop.id);
-      $('btnFullRoute').textContent = '🗺 ' + chunkLabel();
+      $('btnFullRoute').innerHTML = ic('map') + ' ' + chunkLabel();
       $('btnFullRoute').href = googleFullRouteUrl();
       $('btnFullRoute').onclick = () => startBatch();
-      $('btnReopt').textContent = done ? '⚡ Από εδώ' : '⚡ Νέα σειρά';
+      $('btnReopt').innerHTML = ic('zap') + (done ? ' Από εδώ' : ' Νέα σειρά');
       renderBatchBar(list);
       $('undoLast').innerHTML = undoLastHtml('undo-last');
       bindUndoLast($('undoLast'));
@@ -633,7 +631,7 @@
   }
   function showArrive(s) {
     $('navArriveTitle').textContent = title(s);
-    $('navArriveNote').innerHTML = [s.pkgs ? `<b class="pkg-badge${s.pkgs > 1 ? ' multi' : ''}">📦 ${pkgsText(s.pkgs)}</b>` : '', whoText(s) ? esc(whoText(s)) : '', s.note ? '📝 ' + esc(s.note) : ''].filter(Boolean).join('<br>');
+    $('navArriveNote').innerHTML = [s.pkgs ? `<b class="pkg-badge${s.pkgs > 1 ? ' multi' : ''}">${ic('package')} ${pkgsText(s.pkgs)}</b>` : '', whoText(s) ? ic('user') + ' ' + esc(whoText(s)) : '', s.note ? ic('note') + ' ' + esc(s.note) : ''].filter(Boolean).join('<br>');
     const call = $('navCall');
     call.classList.toggle('hidden', !s.phone);
     if (s.phone) call.href = 'tel:' + s.phone.replace(/\s/g, '');
@@ -797,15 +795,15 @@
     el.className = 'map-popup';
     const url = navUrl(s);
     el.innerHTML = `<div class="mp-title">${esc(title(s))}</div>
-      ${s.pkgs > 1 ? `<div class="mp-note"><b>📦 ${pkgsText(s.pkgs)}</b></div>` : ''}
-      ${whoText(s) ? `<div class="mp-note">👤 ${esc(whoText(s))}</div>` : ''}
-      ${s.note ? `<div class="mp-note">📝 ${esc(s.note)}</div>` : ''}
+      ${s.pkgs > 1 ? `<div class="mp-note"><b>${ic('package')} ${pkgsText(s.pkgs)}</b></div>` : ''}
+      ${whoText(s) ? `<div class="mp-note">${ic('user')} ${esc(whoText(s))}</div>` : ''}
+      ${s.note ? `<div class="mp-note">${ic('note')} ${esc(s.note)}</div>` : ''}
       <div class="mp-btns">
-        <a class="btn btn-primary" data-a="nav" href="${esc(url)}"${url.startsWith('http') ? ' target="_blank" rel="noopener"' : ''}>➤</a>
-        <button class="btn ${s.done ? 'btn-ghost' : 'btn-success'}" data-a="done">${s.done ? '↺' : '✓ Παραδόθηκε'}</button>
-        ${!s.done ? '<button class="btn btn-fail" data-a="fail">✗</button>' : ''}
-        ${s.phone ? `<a class="btn btn-ghost" href="tel:${esc(s.phone.replace(/\s/g, ''))}">📞</a>` : ''}
-        <button class="btn btn-ghost" data-a="more">⋯</button>
+        <a class="btn btn-primary" data-a="nav" href="${esc(url)}"${url.startsWith('http') ? ' target="_blank" rel="noopener"' : ''}>${ic('nav')}</a>
+        <button class="btn ${s.done ? 'btn-ghost' : 'btn-success'}" data-a="done">${s.done ? ic('restore') : ic('check') + ' Παραδόθηκε'}</button>
+        ${!s.done ? `<button class="btn btn-fail" data-a="fail">${ic('x')}</button>` : ''}
+        ${s.phone ? `<a class="btn btn-ghost" href="tel:${esc(s.phone.replace(/\s/g, ''))}">${ic('phone')}</a>` : ''}
+        <button class="btn btn-ghost" data-a="more">${ic('more')}</button>
       </div>`;
     el.querySelector('[data-a="done"]').onclick = () => { mv.closePopup(); markDone(s.id, !s.done, true); };
     el.querySelector('[data-a="more"]').onclick = () => { mv.closePopup(); openStop(s.id); };
@@ -836,7 +834,7 @@
     if (!open) return;
     const restAfter = list.filter((x) => !x.done && !b.ids.includes(x.id)).slice(0, GM_CHUNK);
     $('batchText').textContent = `Στο Google Maps: ${b.label}`;
-    $('btnBatchDone').textContent = restAfter.length ? `✓ Τελείωσα · Επόμενες ${restAfter.length} ➜` : '✓ Τελείωσα αυτές';
+    $('btnBatchDone').innerHTML = ic('check') + (restAfter.length ? ` Τελείωσα · Επόμενες ${restAfter.length}` : ' Τελείωσα αυτές');
     $('btnBatchDone').onclick = () => {
       offerUndo(`✓ ${b.label} παραδόθηκαν`);
       b.ids.forEach((id) => { const x = S.stops.find((y) => y.id === id); if (x && !x.done) { x.done = true; x.doneAt = Date.now(); } });
@@ -869,22 +867,22 @@
     if (mv) mv.setView(s.lat, s.lng, Math.max(mv.getZoom(), 15));
     openModal('Στάση', `
       <p class="stop-full">${esc(title(s))}</p>
-      ${s.pkgs ? `<p class="pkg-line"><b class="pkg-badge${s.pkgs > 1 ? ' multi' : ''}">📦 ${pkgsText(s.pkgs)}</b></p>` : ''}
-      ${(s.people || []).length ? `<ul class="people">${s.people.map((p) => `<li><span>👤 ${esc(p.name || '—')}${(p.pkgs || 1) > 1 || s.people.length > 1 ? ` <b>· ${pkgsText(p.pkgs || 1)}</b>` : ''}</span>${p.phone ? `<a class="btn btn-ghost" href="tel:${esc(p.phone.replace(/\s/g, ''))}">📞 ${esc(p.phone)}</a>` : ''}</li>`).join('')}</ul>` : ''}
+      ${s.pkgs ? `<p class="pkg-line"><b class="pkg-badge${s.pkgs > 1 ? ' multi' : ''}">${ic('package')} ${pkgsText(s.pkgs)}</b></p>` : ''}
+      ${(s.people || []).length ? `<ul class="people">${s.people.map((p) => `<li><span>${ic('user')} ${esc(p.name || '—')}${(p.pkgs || 1) > 1 || s.people.length > 1 ? ` <b>· ${pkgsText(p.pkgs || 1)}</b>` : ''}</span>${p.phone ? `<a class="btn btn-ghost" href="tel:${esc(p.phone.replace(/\s/g, ''))}">${ic('phone')} ${esc(p.phone)}</a>` : ''}</li>`).join('')}</ul>` : ''}
       ${s.orig ? `<p class="muted small">Στον χάρτη: ${esc(s.label)}${s.exact === false ? ' (βρέθηκε μόνο ο δρόμος — η πλοήγηση θα ψάξει τον ακριβή αριθμό)' : ''}</p>` : ''}
       <div class="grid2">
-        <a class="btn btn-primary" id="mNav" href="${esc(navUrl(s))}"${navUrl(s).startsWith('http') ? ' target="_blank" rel="noopener"' : ''}>➤ Πλοήγηση</a>
-        <button class="btn ${s.done ? 'btn-ghost' : 'btn-success'}" id="mDone">${s.failed ? '↺ Επαναφορά' : (s.done ? '↺ Δεν παραδόθηκε' : '✓ Παραδόθηκε')}</button>
+        <a class="btn btn-primary" id="mNav" href="${esc(navUrl(s))}"${navUrl(s).startsWith('http') ? ' target="_blank" rel="noopener"' : ''}>${ic('nav')} Πλοήγηση</a>
+        <button class="btn ${s.done ? 'btn-ghost' : 'btn-success'}" id="mDone">${s.failed ? ic('restore') + ' Επαναφορά' : (s.done ? ic('restore') + ' Δεν παραδόθηκε' : ic('check') + ' Παραδόθηκε')}</button>
       </div>
-      ${!s.done ? '<button class="btn btn-fail btn-block" id="mFail">✗ Αποτυχία παράδοσης</button>' : ''}
+      ${!s.done ? `<button class="btn btn-fail btn-block" id="mFail">${ic('x')} Αποτυχία παράδοσης</button>` : ''}
       ${s.failed ? '<p class="fail-txt small">✗ Αποτυχημένη παράδοση — εκτός δρομολογίου. Πάτα «Επαναφορά» για να μπει ξανά.</p>' : ''}
       <label class="field"><span>Σημείωση</span><input id="mNote" type="text" value="${esc(s.note)}" placeholder="π.χ. 3ος όροφος, κουδούνι Παπαδόπουλος"></label>
       <label class="field"><span>Τηλέφωνο</span><input id="mPhone" type="tel" value="${esc(s.phone)}" placeholder="69…"></label>
-      ${s.phone ? `<a class="btn btn-ghost btn-block" href="tel:${esc(s.phone.replace(/\s/g, ''))}">📞 Κλήση ${esc(s.phone)}</a>` : ''}
+      ${s.phone ? `<a class="btn btn-ghost btn-block" href="tel:${esc(s.phone.replace(/\s/g, ''))}">${ic('phone')} Κλήση ${esc(s.phone)}</a>` : ''}
       <div class="grid3">
-        <button class="btn btn-ghost" id="mUp">↑ Πάνω</button>
-        <button class="btn btn-ghost" id="mDown">↓ Κάτω</button>
-        <button class="btn btn-danger" id="mDel">Διαγραφή</button>
+        <button class="btn btn-ghost" id="mUp">${ic('up')} Πάνω</button>
+        <button class="btn btn-ghost" id="mDown">${ic('down')} Κάτω</button>
+        <button class="btn btn-danger" id="mDel">${ic('trash')} Διαγραφή</button>
       </div>`, (b) => {
       const persist = () => { s.note = b.querySelector('#mNote').value.trim(); s.phone = b.querySelector('#mPhone').value.trim(); save(); render(); };
       b.querySelector('#mNote').addEventListener('change', persist);
@@ -930,13 +928,13 @@
   }
 
   $('startRow').onclick = () => pickPlace('Αφετηρία',
-    `<button class="btn btn-ghost btn-block" id="useGps">📍 Χρήση τρέχουσας τοποθεσίας</button>`,
+    `<button class="btn btn-ghost btn-block" id="useGps">${ic('locate')} Χρήση τρέχουσας τοποθεσίας</button>`,
     (it) => { S.start = it; invalidateRoute(); save(); render(); fitAll(); },
     (b) => { b.querySelector('#useGps').onclick = () => { S.start = null; invalidateRoute(); save(); render(); closeModal(); }; });
 
   $('endRow').onclick = () => pickPlace('Τέλος διαδρομής',
     `<button class="btn btn-ghost btn-block" id="endOpen">Όπου τελειώσει η τελευταία στάση</button>
-     <button class="btn btn-ghost btn-block" id="endCycle">↩︎ Επιστροφή στην αφετηρία</button>
+     <button class="btn btn-ghost btn-block" id="endCycle">${ic('home')} Επιστροφή στην αφετηρία</button>
      <p class="muted small">…ή διάλεξε συγκεκριμένο σημείο τέλους:</p>`,
     (it) => { S.endMode = 'fixed'; S.end = it; invalidateRoute(); save(); render(); fitAll(); },
     (b) => {
@@ -1022,10 +1020,10 @@
       <p class="err">Δεν βρέθηκαν στον χάρτη (${failed.length}):</p>
       <ul class="failed-list">${failed.map((f, i) => {
         const r = rejected.get(f.addr);
-        return `<li>${esc(f.addr)}${r ? `<div class="sugg">Google: ${esc(r.label)} <button class="btn btn-ghost sugg-btn" data-i="${i}">✓ Αυτό είναι</button></div>` : ''}</li>`;
+        return `<li>${esc(f.addr)}${r ? `<div class="sugg">Google: ${esc(r.label)} <button class="btn btn-ghost sugg-btn" data-i="${i}">${ic('check')} Αυτό είναι</button></div>` : ''}</li>`;
       }).join('')}</ul>
       ${netErr ? `<p class="muted small">⚠️ Η υπηρεσία αναζήτησης δεν απαντούσε για ${netErr} από αυτές. Περίμενε λίγο και πάτα «Ξαναδοκίμασε».</p>` : ''}
-      <button class="btn btn-ghost btn-block" id="retryFailed">↻ Ξαναδοκίμασε όσες δεν βρέθηκαν</button>
+      <button class="btn btn-ghost btn-block" id="retryFailed">${ic('repeat')} Ξαναδοκίμασε όσες δεν βρέθηκαν</button>
       <p class="muted small">Όσες δεν βρίσκονται ούτε έτσι, λείπουν από τον δωρεάν χάρτη. Πρόσθεσέ τες από την αναζήτηση γράφοντας μόνο τον δρόμο ή πάτα παρατεταμένα στο σημείο πάνω στον χάρτη.</p>` : '');
     logEl.querySelectorAll('.sugg-btn').forEach((bt) => {
       bt.onclick = () => {
@@ -1125,7 +1123,7 @@
           <input type="checkbox" id="fc${i}" ${it.dup || it.fragment ? '' : 'checked'}>
           <div class="found-body">
             <input type="text" id="fa${i}" value="${esc(it.address)}">
-            <small>${[it.pkgs > 1 ? `<b class="pkg-badge">📦 ${pkgsText(it.pkgs)}</b>` : '', (it.people || []).length ? '👤 ' + esc(whoText(it)) : (it.name ? '👤 ' + esc(it.name) : ''), it.phone ? '📞 ' + esc(it.phone) : '', it.dup ? '<b>υπάρχει ήδη</b>' : '', it.mergeInto ? '<b class="merge-note">➕ θα μπει στη στάση που υπάρχει ήδη σε αυτή τη διεύθυνση</b>' : '', it.ambig ? `<span class="ambig">⚠️ Αριθμός: <button class="chip-sm on" data-i="${i}" data-v="a">${esc(it.ambig.a)}</button> ή <button class="chip-sm" data-i="${i}" data-v="b">${esc(it.ambig.b)}</button>;</span>` : '', it.fragment ? '<b>⚠️ κομμάτι διεύθυνσης — συμπλήρωσε την οδό</b>' : ''].filter(Boolean).join(' · ')}</small>
+            <small>${[it.pkgs > 1 ? `<b class="pkg-badge">${ic('package')} ${pkgsText(it.pkgs)}</b>` : '', (it.people || []).length ? ic('user') + ' ' + esc(whoText(it)) : (it.name ? ic('user') + ' ' + esc(it.name) : ''), it.phone ? ic('phone') + ' ' + esc(it.phone) : '', it.dup ? '<b>υπάρχει ήδη</b>' : '', it.mergeInto ? `<b class="merge-note">${ic('plus')} θα μπει στη στάση που υπάρχει ήδη σε αυτή τη διεύθυνση</b>` : '', it.ambig ? `<span class="ambig">${ic('alert')} Αριθμός: <button class="chip-sm on" data-i="${i}" data-v="a">${esc(it.ambig.a)}</button> ή <button class="chip-sm" data-i="${i}" data-v="b">${esc(it.ambig.b)}</button>;</span>` : '', it.fragment ? `<b>${ic('alert')} κομμάτι διεύθυνσης — συμπλήρωσε την οδό</b>` : ''].filter(Boolean).join(' · ')}</small>
           </div>
         </li>`).join('')}</ul>
       <button class="btn btn-primary btn-block" id="foundGo">Προσθήκη</button>
@@ -1211,7 +1209,7 @@
         </select></label>
       <label class="field"><span>Χρόνος σε κάθε στάση (λεπτά)</span>
         <input id="sSvc" type="number" min="0" max="120" inputmode="numeric" value="${S.settings.serviceMin}"></label>
-      ${g ? `<a class="btn btn-ghost btn-block" href="${esc(g)}" target="_blank" rel="noopener">🌐 Όλη η διαδρομή στο Google Maps (μέσω browser)</a><p class="muted small">Χρησιμοποίησέ το μόνο αν δεν ανοίγει η εφαρμογή Google Maps.</p>` : ''}
+      ${g ? `<a class="btn btn-ghost btn-block" href="${esc(g)}" target="_blank" rel="noopener">${ic('globe')} Όλη η διαδρομή στο Google Maps (μέσω browser)</a><p class="muted small">Χρησιμοποίησέ το μόνο αν δεν ανοίγει η εφαρμογή Google Maps.</p>` : ''}
       <div class="card google-card">
         <b>Αναζήτηση Google</b> <span class="muted small">${S.settings.googleKey ? (googleEnabled() ? '✅ ενεργή' : '⏸ έφτασε το μηνιαίο όριο') : 'ανενεργή'}</span>
         <p class="muted small">Βρίσκει τις διευθύνσεις με ακριβή αριθμό, όπως το Spoke. Βάλε εδώ το δικό σου κλειδί (Google Maps Platform).</p>
@@ -1230,7 +1228,7 @@
         <button class="btn btn-ghost btn-block" id="sMapSave">Εφαρμογή ρυθμίσεων χάρτη</button>
         <p class="muted small">Τώρα: ${mv && mv.kind === 'google' ? 'χάρτης Google' : 'δωρεάν χάρτης'}.</p>` : ''}
       </div>
-      <button class="btn btn-ghost btn-block" id="sExport">⬇︎ Εξαγωγή στάσεων (κείμενο)</button>
+      <button class="btn btn-ghost btn-block" id="sExport">${ic('download')} Εξαγωγή στάσεων (κείμενο)</button>
       <p class="muted small">Χάρτες: © OpenStreetMap contributors. Δρομολόγηση: OSRM. Αναζήτηση: ${S.settings.googleKey ? 'Google, ' : ''}Photon / Nominatim.<br>Τα δεδομένα σου αποθηκεύονται μόνο σε αυτό το κινητό.<br>Έκδοση ${APP_VERSION}</p>`, (b) => {
       const sel = b.querySelector('#sNav');
       sel.value = S.settings.navApp;
@@ -1435,7 +1433,7 @@
   }
   function undoLastHtml(cls) {
     const s = lastDoneStop();
-    return s ? `<button class="btn ${cls}" data-undo-last>↶ Αναίρεση: ${esc(title(s).split(',')[0])} <small>(${s.failed ? '✗ αποτυχία' : '✓ παραδόθηκε'})</small></button>` : '';
+    return s ? `<button class="btn ${cls}" data-undo-last>${ic('undo')} Αναίρεση: ${esc(title(s).split(',')[0])} <small>(${s.failed ? 'αποτυχία' : 'παραδόθηκε'})</small></button>` : '';
   }
   function bindUndoLast(root) {
     root.querySelectorAll('[data-undo-last]').forEach((b) => {
@@ -1461,17 +1459,17 @@
       ${undoLastHtml('d-undo')}
       <div class="d-label">Στάση ${idx + 1} από ${list.length}${eta ? ' · άφιξη ~' + fmtClock(eta.at) : ''}</div>
       <div class="d-title">${esc(title(next))}</div>
-      ${next.pkgs ? `<div class="d-note"><b class="pkg-badge${next.pkgs > 1 ? ' multi' : ''}">📦 ${pkgsText(next.pkgs)}</b></div>` : ''}
-      ${whoText(next) ? `<div class="d-note">👤 ${esc(whoText(next))}</div>` : ''}
-      ${next.note ? `<div class="d-note">📝 ${esc(next.note)}</div>` : ''}
-      ${next.phone ? `<a class="btn btn-ghost d-call" href="tel:${esc(next.phone.replace(/\s/g, ''))}">📞 ${esc(next.phone)}</a>` : ''}
-      <button class="btn btn-success d-big" id="dDoneGo">✓ Παραδόθηκε<small>${after ? 'και πλοήγηση στην επόμενη' : 'τελευταία στάση'}</small></button>
+      ${next.pkgs ? `<div class="d-note"><b class="pkg-badge${next.pkgs > 1 ? ' multi' : ''}">${ic('package')} ${pkgsText(next.pkgs)}</b></div>` : ''}
+      ${whoText(next) ? `<div class="d-note">${ic('user')} ${esc(whoText(next))}</div>` : ''}
+      ${next.note ? `<div class="d-note">${ic('note')} ${esc(next.note)}</div>` : ''}
+      ${next.phone ? `<a class="btn btn-ghost d-call" href="tel:${esc(next.phone.replace(/\s/g, ''))}">${ic('phone')} ${esc(next.phone)}</a>` : ''}
+      <button class="btn btn-success d-big" id="dDoneGo"><span>${ic('check')} Παραδόθηκε</span><small>${after ? 'και πλοήγηση στην επόμενη' : 'τελευταία στάση'}</small></button>
       <div class="d-row">
-        <button class="btn btn-primary d-mid" id="dNav">➤ Πλοήγηση</button>
-        <button class="btn btn-ghost d-mid" id="dDoneOnly">✓ Μόνο παραδόθηκε</button>
+        <button class="btn btn-primary d-mid" id="dNav">${ic('nav')} Πλοήγηση</button>
+        <button class="btn btn-ghost d-mid" id="dDoneOnly">${ic('check')} Μόνο παραδόθηκε</button>
       </div>
-      <button class="btn btn-ghost d-mid d-wide" id="dFull">🗺 ${chunkLabel()} στο Google Maps</button>
-      <button class="btn btn-fail d-mid d-wide" id="dFail">✗ Αποτυχία παράδοσης</button>`;
+      <button class="btn btn-ghost d-mid d-wide" id="dFull">${ic('map')} ${chunkLabel()} στο Google Maps</button>
+      <button class="btn btn-fail d-mid d-wide" id="dFail">${ic('x')} Αποτυχία παράδοσης</button>`;
     $('dNav').onclick = () => navigateTo(next);
     $('dFull').onclick = () => { const u = googleFullRouteUrl(); startBatch(); openUrl(u); };
     $('dDoneOnly').onclick = () => markDone(next.id, true, true);
