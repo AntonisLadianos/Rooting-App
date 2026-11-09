@@ -141,10 +141,12 @@
     return String(addr).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\p{L}\d]/gu, '');
   }
 
-  // Διευθύνσεις κομμένες ανάμεσα σε δύο screenshots:
-  //   τέλος εικόνας Ν:   «Ελευθερίου Βενιζέλου 171,»   (όνομα, χωρίς ΤΚ/τηλέφωνο)
-  //   αρχή εικόνας Ν+1:  «Γάζι, 71414»                  (χωρίς οδό/όνομα, με τηλέφωνο)
-  // -> «Ελευθερίου Βενιζέλου 171, Γάζι, 71414»
+  // ---------- Ανάγνωση ανά καρτέλα ----------
+  // Στην εφαρμογή courier κάθε καρτέλα ξεκινά με «Παράδοση σε πελάτη» (ή «Παραλαβή…») και
+  // τελειώνει με «N πακέτο/πακέτα …» και τον κωδικό αποστολής («AZP - 94GOE7WM4WK6J»).
+  const RE_HEADER = /παρ[αά]δοση\s*σε\s*\S+|παραλαβ[ήη]\s*(απ[οό]|σε)|clever\s*point/i;
+  const RE_CUSTOMER = /παρ[αά]δοση\s*σε\s*πελ[αά]τη|παραλαβ[ήη]\s*(απ[οό]|σε)\s*πελ[αά]τη/i;
+  function isCardEnd(s) { return /πακ[εέ]τ/i.test(s) || /^\S{1,4}\s*-+\s*-?\s*[\p{L}\d]{6,}/u.test(s); }
   function hasStreet(addr) { const first = String(addr).split(',')[0]; return /\p{L}{3,}/u.test(first) && /\d/.test(first.replace(/\b\d{3}\s?\d{2}\b/, '')); }
   function isTailOnly(it) {
     if (it.name) return false;
@@ -152,30 +154,89 @@
     if (/^\d{3}\s?\d{2}$/.test(first)) return true;               // «71303»
     return !hasStreet(it.address) && RE_POSTAL.test(it.address);  // «Γάζι, 71414»
   }
-  function isHeadPartial(it) { return hasStreet(it.address) && !RE_POSTAL.test(it.address) && !it.phone; }
-  function mergeAcross(perImage) {
-    const out = [];
-    perImage.forEach((items, k) => {
-      items = items.slice();
-      const prev = out[out.length - 1];
-      if (k > 0 && prev && prev.partialEnd && items.length && isTailOnly(items[0])) {
-        const tail = items.shift();
-        prev.address = tidyAddress(prev.address.replace(/[,\s]+$/, '') + ', ' + tail.address);
-        prev.phone = prev.phone || tail.phone;
-      }
-      if (out.length) delete out[out.length - 1].partialEnd;
-      items.forEach((it, i) => {
-        const x = Object.assign({}, it);
-        if (i === items.length - 1 && isHeadPartial(x)) x.partialEnd = true;
-        if (isTailOnly(x)) x.fragment = true; // σκέτο «περιοχή/ΤΚ» που δεν ενώθηκε με κάτι
-        out.push(x);
+
+  // Επιστρέφει { cards: [{address, name, phone, closed}], pre: [...] } — pre = ό,τι υπάρχει πάνω από
+  // την πρώτη καρτέλα (συνέχεια της τελευταίας καρτέλας του προηγούμενου screenshot).
+  // Αν δεν βρεθούν καρτέλες (άλλη εφαρμογή/λίστα), cards = null και ισχύει η παλιά ανάγνωση.
+  function extractImage(text) {
+    const raw = text.split(/\r?\n/);
+    const heads = [];
+    raw.forEach((l, i) => { if (RE_HEADER.test(clean(l))) heads.push(i); });
+    if (!heads.length) return { cards: null, items: extract(text) };
+    const pre = extract(raw.slice(0, heads[0]).join('\n'));
+    const preLines = raw.slice(0, heads[0]).map(clean);
+    const prePhone = (preLines.find(isPhoneLine) || '');
+    const cards = [];
+    heads.forEach((h, k) => {
+      const seg = raw.slice(h, k + 1 < heads.length ? heads[k + 1] : raw.length);
+      if (!RE_CUSTOMER.test(clean(seg[0]))) return; // π.χ. «Παράδοση σε Αποθήκη», Clever Point
+      const lines = seg.map(clean).filter((l) => l.length > 1);
+      const found = extract(seg.slice(1).join('\n'));
+      if (!found.length) return;
+      const it = found[0];
+      let nameLine = lines[1] && looksLikeName(lines[1]) ? lines[1] : '';
+      // όνομα σε δύο γραμμές («Σταυρουλα Καναβακη» / «Τζώρτζογλου»)
+      if (nameLine && lines[2] && /^\p{L}{3,}$/u.test(lines[2]) && !isNoise(lines[2])) nameLine += ' ' + lines[2];
+      const phoneLine = lines.find(isPhoneLine);
+      cards.push({
+        address: it.address,
+        name: nameLine || it.name,
+        phone: phoneLine ? normPhone(phoneLine) : it.phone,
+        closed: lines.some(isCardEnd) || !!phoneLine
       });
     });
-    out.forEach((x) => delete x.partialEnd);
-    return out;
+    return { cards, pre, prePhone: prePhone ? normPhone(prePhone) : '' };
   }
 
-  const api = { recognize, extract, key, tidyAddress, mergeAcross };
+  // Ενώνει τα αποτελέσματα πολλών screenshots (με τη σειρά που τραβήχτηκαν).
+  function mergeAcross(perImage) {
+    const out = [];
+    let lastOpen = null; // τελευταία καρτέλα του προηγούμενου screenshot, αν κόπηκε
+    perImage.forEach((img) => {
+      if (Array.isArray(img)) img = { cards: null, items: img };
+      if (img.cards === null) {
+        // χωρίς καρτέλες: παλιά λογική (κομμένη = έχει οδό, όχι ΤΚ, όχι τηλέφωνο, και είναι τελευταία)
+        const items = img.items.slice();
+        if (lastOpen && items.length && isTailOnly(items[0])) {
+          const t = items.shift();
+          lastOpen.address = tidyAddress(lastOpen.address.replace(/[,\s]+$/, '') + ', ' + t.address);
+          lastOpen.phone = lastOpen.phone || t.phone;
+        }
+        lastOpen = null;
+        items.forEach((it, i) => {
+          const x = Object.assign({}, it);
+          if (isTailOnly(x)) x.fragment = true;
+          out.push(x);
+          if (i === items.length - 1 && hasStreet(x.address) && !RE_POSTAL.test(x.address) && !x.phone) lastOpen = x;
+        });
+        return;
+      }
+      // με καρτέλες
+      img.pre.forEach((p) => {
+        if (hasStreet(p.address)) {
+          // συνέχεια κομμένης καρτέλας με ολόκληρη τη διεύθυνση, ή καρτέλα που της κόπηκε η αρχή
+          if (lastOpen && RootingKey(p.address).startsWith(RootingKey(lastOpen.address.split(',')[0]))) {
+            lastOpen.address = p.address; lastOpen.phone = lastOpen.phone || p.phone;
+          } else out.push(Object.assign({}, p));
+        } else if (lastOpen) {
+          lastOpen.address = tidyAddress(lastOpen.address.replace(/[,\s]+$/, '') + ', ' + p.address);
+          lastOpen.phone = lastOpen.phone || p.phone;
+        }
+        // αλλιώς: σκέτοι κωδικοί/κομμάτια ολοκληρωμένης καρτέλας -> αγνοούνται
+      });
+      if (lastOpen && !lastOpen.phone && img.prePhone) lastOpen.phone = img.prePhone;
+      lastOpen = null;
+      img.cards.forEach((c, i) => {
+        const x = { address: c.address, name: c.name, phone: c.phone };
+        out.push(x);
+        if (i === img.cards.length - 1 && !c.closed) lastOpen = x;
+      });
+    });
+    return out;
+  }
+  function RootingKey(s) { return key(s); }
+
+  const api = { recognize, extract, extractImage, key, tidyAddress, mergeAcross };
   global.RootingOCR = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
