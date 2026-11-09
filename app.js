@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '18';
+  const APP_VERSION = '19';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // ---------- Κατάσταση ----------
@@ -390,6 +390,31 @@
   function fmtClock(ms) { return new Date(ms).toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' }); }
 
   // ETA για κάθε στάση με βάση τα σκέλη της διαδρομής
+  // Χρόνοι/αποστάσεις για την ΤΡΕΧΟΥΣΑ σειρά (χωρίς νέα βελτιστοποίηση), από τη θέση μου
+  let legsTimer = null;
+  function scheduleLegs() { clearTimeout(legsTimer); legsTimer = setTimeout(refreshLegs, 500); }
+  async function refreshLegs() {
+    if (!S.route) return;
+    const list = orderedStops(), pending = list.filter((x) => !x.done);
+    if (!pending.length) return;
+    const origin = myPos || S.route.origin || S.start || pending[0];
+    const seq = [origin, ...pending];
+    if (S.endMode === 'fixed' && S.end) seq.push(S.end);
+    else if (S.endMode === 'cycle' && (S.start || S.route.origin)) seq.push(S.start || S.route.origin);
+    let geometry, legs, approx = false;
+    try { const g = await getRouteGeometry(seq); geometry = g.geometry; legs = g.legs; }
+    catch (e) {
+      approx = true; geometry = seq.map((p) => [p.lat, p.lng]); legs = [];
+      for (let i = 0; i < seq.length - 1; i++) { const d = haversine(seq[i], seq[i + 1]) * 1.3; legs.push({ distance: d, duration: d / 8.3 }); }
+    }
+    if (!S.route) return;
+    let k = 0;
+    const aligned = list.map((x) => (x.done ? { duration: 0, distance: 0 } : legs[k++]));
+    while (k < legs.length) aligned.push(legs[k++]); // σκέλος προς το τέλος/επιστροφή
+    Object.assign(S.route, { legs: aligned, geometry, approx, startedAt: Date.now(), pre: 0 });
+    save(); render();
+  }
+
   function computeEtas(list) {
     const etas = {};
     if (!S.route || !S.route.legs) return etas;
@@ -398,7 +423,7 @@
     const pre = S.route.pre || 0;
     list.forEach((s, i) => {
       const leg = S.route.legs[i];
-      if (!leg || i < pre) return;
+      if (!leg || i < pre || s.done) return;
       t += leg.duration * 1000;
       etas[s.id] = { at: t, leg };
       t += svc;
@@ -466,7 +491,7 @@
       const pending = list.filter((x) => !x.done);
       let remSec = 0, remM = 0;
       list.forEach((x, k) => { if (!x.done && S.route.legs && S.route.legs[k]) { remSec += S.route.legs[k].duration + (S.settings.serviceMin || 0) * 60; remM += S.route.legs[k].distance; } });
-      $('nextRemain').textContent = `μένουν ${pending.length}` + (S.route.legs ? ` · ~${fmtDur(remSec)} · ${fmtKm(remM)}` : '');
+      $('nextRemain').textContent = `μένουν ${pending.length}` + (S.route.legs ? ` · ~${fmtDur(remSec)} · τέλος ~${fmtClock(Date.now() + remSec * 1000)}` : ' · υπολογισμός…');
       $('nextProgress').style.width = Math.round((done / list.length) * 100) + '%';
       const call = $('btnCallNext');
       call.classList.toggle('hidden', !nextStop.phone);
@@ -494,11 +519,11 @@
     // Σύνοψη
     const sum = $('summary');
     if (S.route && S.route.legs) {
-      const dist = S.route.legs.reduce((a, l) => a + l.distance, 0);
-      const dur = S.route.legs.reduce((a, l) => a + l.duration, 0);
-      const svc = (S.route.order.length - (S.route.pre || 0)) * (S.settings.serviceMin || 0) * 60;
-      const finish = S.route.startedAt + (dur + svc) * 1000;
-      sum.innerHTML = `<div><b>${fmtKm(dist)}</b><small>απόσταση</small></div>
+      // ό,τι απομένει: σκέλη των στάσεων που δεν έχουν παραδοθεί (+ σκέλος προς το τέλος)
+      let dist = 0, dur = 0, left = 0;
+      S.route.legs.forEach((l, k) => { const st = list[k]; if (!l || (st && st.done)) return; dist += l.distance; dur += l.duration; if (st) left++; });
+      const finish = Date.now() + (dur + left * (S.settings.serviceMin || 0) * 60) * 1000;
+      sum.innerHTML = `<div><b>${fmtKm(dist)}</b><small>απομένουν</small></div>
         <div><b>${fmtDur(dur)}</b><small>οδήγηση</small></div>
         <div><b>${fmtClock(finish)}</b><small>τέλος περίπου</small></div>`;
       if (!nextStop) sum.innerHTML += `<div class="all-done">🎉 Παραδόθηκαν όλα!</div>`;
@@ -599,7 +624,7 @@
     const i = o.indexOf(id);
     if (i < 0) return;
     o.splice(i, 1); o.push(id);
-    S.route.legs = null; // τα ETA δεν ισχύουν πια
+    S.route.legs = null; scheduleLegs(); // ξαναϋπολογίζουμε χρόνους για τη νέα σειρά
     S.route.geometry = null;
     save(); render();
     toast('Η στάση μετακινήθηκε στο τέλος. Πάτα «Βελτιστοποίηση» για νέους χρόνους.');
@@ -610,7 +635,7 @@
       const o = S.route.order, i = o.indexOf(id), j = i + dir;
       if (i < 0 || j < 0 || j >= o.length) return;
       [o[i], o[j]] = [o[j], o[i]];
-      S.route.legs = null; S.route.geometry = null;
+      S.route.legs = null; S.route.geometry = null; scheduleLegs();
     } else {
       const a = S.stops, i = a.findIndex((s) => s.id === id), j = i + dir;
       if (i < 0 || j < 0 || j >= a.length) return;
@@ -625,7 +650,7 @@
     S.stops = S.stops.filter((s) => s.id !== id);
     if (S.route) {
       S.route.order = S.route.order.filter((x) => x !== id);
-      S.route.legs = null; S.route.geometry = null;
+      S.route.legs = null; S.route.geometry = null; scheduleLegs();
       if (!S.route.order.length) S.route = null;
     }
     save(); render();
@@ -1012,7 +1037,7 @@
       b.querySelector('#clrDone').onclick = () => {
         const ids = new Set(S.stops.filter((s) => s.done).map((s) => s.id));
         S.stops = S.stops.filter((s) => !ids.has(s.id));
-        if (S.route) { S.route.order = S.route.order.filter((x) => !ids.has(x)); S.route.legs = null; S.route.geometry = null; if (!S.route.order.length) S.route = null; }
+        if (S.route) { S.route.order = S.route.order.filter((x) => !ids.has(x)); S.route.legs = null; S.route.geometry = null; if (!S.route.order.length) S.route = null; else scheduleLegs(); }
         save(); render(); closeModal();
       };
       b.querySelector('#clrAll').onclick = () => { S.stops = []; S.route = null; save(); render(); closeModal(); };
@@ -1437,6 +1462,7 @@
   setSheet(S.route ? 'peek' : 'half', false);
   startMap().then(() => {
     render();
+    if (S.route && !S.route.legs) scheduleLegs(); // στατιστικά που χάθηκαν παλιότερα
     // Άνοιγμα: πρώτα στην τελευταία γνωστή θέση, μετά στη σημερινή μόλις τη βρει το GPS
     if (S.lastPos) mv.setView(S.lastPos.lat, S.lastPos.lng, 15);
     else if (S.stops.length) fitAll();
