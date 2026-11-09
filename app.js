@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '15';
+  const APP_VERSION = '16';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // ---------- Κατάσταση ----------
@@ -929,7 +929,7 @@
   $('shotInput').addEventListener('change', async (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
-    const found = [];
+    const found = [], perImage = [];
     try {
       for (let i = 0; i < files.length; i++) {
         const label = files.length > 1 ? `Διαβάζω εικόνα ${i + 1}/${files.length}` : 'Διαβάζω την εικόνα';
@@ -938,7 +938,7 @@
           if (m.status === 'recognizing text') busy(true, `${label}… ${Math.round((m.progress || 0) * 100)}%`);
           else if (/loading|initializ/.test(m.status)) busy(true, 'Προετοιμασία αναγνώρισης κειμένου…\n(μόνο την πρώτη φορά αργεί)');
         });
-        found.push(...RootingOCR.extract(text));
+        perImage.push(RootingOCR.extract(text));
       }
     } catch (err) {
       console.error(err);
@@ -947,6 +947,7 @@
       return;
     }
     busy(false);
+    found.push(...RootingOCR.mergeAcross(perImage)); // ενώνει διευθύνσεις κομμένες ανάμεσα σε δύο εικόνες
     // διπλότυπα (επικαλυπτόμενα screenshots ή ήδη στη λίστα)
     const existing = new Set(S.stops.map((s) => RootingOCR.key(s.orig || '')));
     const seen = new Set();
@@ -970,10 +971,10 @@
       <p class="muted small">Έλεγξε και διόρθωσε αν χρειάζεται. Ξετσέκαρε όσες δεν θέλεις.</p>
       <ul class="found-list">${items.map((it, i) => `
         <li>
-          <input type="checkbox" id="fc${i}" ${it.dup ? '' : 'checked'}>
+          <input type="checkbox" id="fc${i}" ${it.dup || it.fragment ? '' : 'checked'}>
           <div class="found-body">
             <input type="text" id="fa${i}" value="${esc(it.address)}">
-            <small>${[it.name ? '👤 ' + esc(it.name) : '', it.phone ? '📞 ' + esc(it.phone) : '', it.dup ? '<b>υπάρχει ήδη</b>' : ''].filter(Boolean).join(' · ')}</small>
+            <small>${[it.name ? '👤 ' + esc(it.name) : '', it.phone ? '📞 ' + esc(it.phone) : '', it.dup ? '<b>υπάρχει ήδη</b>' : '', it.fragment ? '<b>⚠️ κομμάτι διεύθυνσης — συμπλήρωσε την οδό</b>' : ''].filter(Boolean).join(' · ')}</small>
           </div>
         </li>`).join('')}</ul>
       <button class="btn btn-primary btn-block" id="foundGo">Προσθήκη</button>

@@ -141,7 +141,41 @@
     return String(addr).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\p{L}\d]/gu, '');
   }
 
-  const api = { recognize, extract, key, tidyAddress };
+  // Διευθύνσεις κομμένες ανάμεσα σε δύο screenshots:
+  //   τέλος εικόνας Ν:   «Ελευθερίου Βενιζέλου 171,»   (όνομα, χωρίς ΤΚ/τηλέφωνο)
+  //   αρχή εικόνας Ν+1:  «Γάζι, 71414»                  (χωρίς οδό/όνομα, με τηλέφωνο)
+  // -> «Ελευθερίου Βενιζέλου 171, Γάζι, 71414»
+  function hasStreet(addr) { const first = String(addr).split(',')[0]; return /\p{L}{3,}/u.test(first) && /\d/.test(first.replace(/\b\d{3}\s?\d{2}\b/, '')); }
+  function isTailOnly(it) {
+    if (it.name) return false;
+    const first = it.address.split(',')[0].trim();
+    if (/^\d{3}\s?\d{2}$/.test(first)) return true;               // «71303»
+    return !hasStreet(it.address) && RE_POSTAL.test(it.address);  // «Γάζι, 71414»
+  }
+  function isHeadPartial(it) { return hasStreet(it.address) && !RE_POSTAL.test(it.address) && !it.phone; }
+  function mergeAcross(perImage) {
+    const out = [];
+    perImage.forEach((items, k) => {
+      items = items.slice();
+      const prev = out[out.length - 1];
+      if (k > 0 && prev && prev.partialEnd && items.length && isTailOnly(items[0])) {
+        const tail = items.shift();
+        prev.address = tidyAddress(prev.address.replace(/[,\s]+$/, '') + ', ' + tail.address);
+        prev.phone = prev.phone || tail.phone;
+      }
+      if (out.length) delete out[out.length - 1].partialEnd;
+      items.forEach((it, i) => {
+        const x = Object.assign({}, it);
+        if (i === items.length - 1 && isHeadPartial(x)) x.partialEnd = true;
+        if (isTailOnly(x)) x.fragment = true; // σκέτο «περιοχή/ΤΚ» που δεν ενώθηκε με κάτι
+        out.push(x);
+      });
+    });
+    out.forEach((x) => delete x.partialEnd);
+    return out;
+  }
+
+  const api = { recognize, extract, key, tidyAddress, mergeAcross };
   global.RootingOCR = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
