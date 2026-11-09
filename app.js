@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '13';
+  const APP_VERSION = '14';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // ---------- Κατάσταση ----------
@@ -199,9 +199,9 @@
   }
 
   // Επιστρέφει {label, lat, lng, exact} ή null. exact = βρέθηκε ακριβώς ο αριθμός/κτίριο.
-  async function googleGeocode(q, near, postalCode) {
+  async function googleGeocode(q, near, restrict) {
     const geocoder = await loadGoogle();
-    const req = { address: q, region: 'gr', componentRestrictions: postalCode ? { country: 'GR', postalCode } : { country: 'GR' } };
+    const req = { address: q, region: 'gr', componentRestrictions: Object.assign({ country: 'GR' }, restrict || {}) };
     if (near) req.bounds = { south: near.lat - 0.3, west: near.lng - 0.4, north: near.lat + 0.3, east: near.lng + 0.4 };
     countGoogle();
     let resp;
@@ -230,14 +230,25 @@
     // Με κλειδί Google: πρώτα Google (1 αίτημα), και μόνο αν δεν βρει, τα δωρεάν
     if (googleEnabled()) {
       try {
-        const ok = (g) => g && RootingGeo.googleMatches(q, g.comps) && (!region || RootingGeo.distKm(region, g) < 50);
-        let g = await googleGeocode(q, region || searchBias());
+        const near = region || searchBias();
+        const ok = (g) => g && RootingGeo.googleMatches(q, g.comps, RootingGeo.distKm(near, g) < 60) && (!region || RootingGeo.distKm(region, g) < 50);
+        let g = await googleGeocode(q, near);
         if (ok(g)) return g;
-        // λάθος περιοχή (π.χ. ίδια οδός σε άλλη πόλη): ξαναρωτάμε με υποχρεωτικό ΤΚ
-        const postal = RootingGeo.parseQuery(q).postal;
-        if (g && postal) {
-          g = await googleGeocode(q, region || searchBias(), postal);
-          if (ok(g)) return g;
+        if (g) {
+          // λάθος περιοχή (π.χ. ίδια οδός σε άλλη πόλη): ψάχνουμε ΜΕΣΑ στην περιοχή που γράφει η διεύθυνση,
+          // χωρίς τον ΤΚ (μπορεί να είναι αυτός λάθος)
+          const area = RootingGeo.areaText(q);
+          const noPostal = q.replace(/(^|\D)\d{3}\s?\d{2}(?!\d)/g, '$1').replace(/\s+,/g, ',').replace(/[,\s]+$/, '').trim();
+          if (area) {
+            g = await googleGeocode(noPostal, near, { locality: area }).catch(() => null);
+            if (ok(g)) return g;
+          }
+          // αλλιώς με υποχρεωτικό ΤΚ
+          const postal = RootingGeo.parseQuery(q).postal;
+          if (postal) {
+            g = await googleGeocode(q, near, { postalCode: postal }).catch(() => null);
+            if (ok(g)) return g;
+          }
         }
       } catch (e) { /* συνεχίζουμε με τα δωρεάν */ }
     }
@@ -312,7 +323,7 @@
         if (googleEnabled() && /\d/.test(q) && q.length >= 6) {
           try {
             const g = await googleGeocode(q, searchBias());
-            if (g && RootingGeo.googleMatches(q, g.comps)) res = [Object.assign(g, { label: '📍 ' + g.label })].concat(res.slice(0, 4));
+            if (g && RootingGeo.googleMatches(q, g.comps, RootingGeo.distKm(searchBias(), g) < 60)) res = [Object.assign(g, { label: '📍 ' + g.label })].concat(res.slice(0, 4));
           } catch (e) { /* μόνο τα δωρεάν */ }
         }
         if (seq !== searchSeq) return;

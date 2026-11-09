@@ -99,6 +99,7 @@
       else if (pc.slice(0, 2) === pq.postal.slice(0, 2)) score += 2;
       else postalBad = true;
     }
+    const nearBias = !bias || distKm(bias, { lat, lng }) < 60;
     let areaBad = false;
     if (pq.area.length) {
       // πόλη/συνοικία μετράει πολύ, νομός λιγότερο, καμία αντιστοιχία = ποινή
@@ -107,7 +108,7 @@
       const local = anyWord([p.city, p.town, p.village, p.district, p.locality, p.name].filter(Boolean).join(' '));
       const wide = anyWord([p.county, p.state].filter(Boolean).join(' '));
       const latinArea = pq.area.every((w) => /^[a-z]+$/.test(w)); // «Heraklion» δεν συγκρίνεται αξιόπιστα με «Ηράκλειο»
-      if (local >= 0.6) score += 20 * local;
+      if (local >= 0.6) { score += 20 * local; if (postalBad && nearBias) postalBad = false; } // σωστή περιοχή, λάθος ΤΚ
       else if (wide >= 0.6) score += 8 * wide;
       else if (!latinArea) { score -= 15; areaBad = true; }
     }
@@ -133,24 +134,38 @@
    * comps = address_components της Google. Επιστρέφει false αν είναι σίγουρα άλλη περιοχή
    * (π.χ. «Ελ. Βενιζέλου 171, Γάζι, 71414» -> Μάλια 700 07).
    */
-  function googleMatches(q, comps) {
+  // Η περιοχή μετράει πιο πολύ από τον ΤΚ (οι ΤΚ στις λίστες είναι συχνά λάθος).
+  //   περιοχή ταιριάζει  -> δεκτό (αν ο ΤΚ διαφωνεί, μόνο αν είναι κοντά: near = true)
+  //   περιοχή διαφωνεί   -> απορρίπτεται, ό,τι κι αν λέει ο ΤΚ
+  //   χωρίς περιοχή      -> αποφασίζει ο ΤΚ (ίδιος νομός)
+  function areaWordsOf(pq) { return pq.area.filter((w) => !/^[a-z]+$/.test(w)); } // λατινικά δεν συγκρίνονται αξιόπιστα
+  function areaMatchScore(pq, text) {
+    const aw = areaWordsOf(pq);
+    if (!aw.length || !text) return null;
+    return Math.max(0, ...aw.map((w) => nameScore([w], text)));
+  }
+  function googleMatches(q, comps, near) {
     const pq = parseQuery(q);
     const get = (t) => (comps || []).filter((c) => c.types && c.types.includes(t));
     const pcC = get('postal_code')[0];
     const pc = pcC ? String(pcC.long_name || pcC.short_name || '').replace(/\s/g, '') : '';
-    if (pq.postal && pc && pc.slice(0, 2) !== pq.postal.slice(0, 2)) return false; // άλλος νομός
-    const postalClose = !!(pq.postal && pc && pc.slice(0, 3) === pq.postal.slice(0, 3));
-    const areaWords = pq.area.filter((w) => !/^[a-z]+$/.test(w)); // λατινικά ονόματα δεν συγκρίνονται αξιόπιστα
-    if (!areaWords.length) return true;
+    const postalOk = !pq.postal || !pc || pc.slice(0, 2) === pq.postal.slice(0, 2);
     const names = ['locality', 'sublocality', 'sublocality_level_1', 'neighborhood', 'postal_town',
       'administrative_area_level_3', 'administrative_area_level_4', 'administrative_area_level_5', 'colloquial_area']
       .flatMap(get).flatMap((c) => [c.long_name, c.short_name]).filter(Boolean).join(' ');
-    const areaOk = Math.max(0, ...areaWords.map((w) => nameScore([w], names))) >= 0.6;
-    if (areaOk || postalClose) return true;
-    return !pq.postal && !names; // χωρίς στοιχεία για σύγκριση: το δεχόμαστε
+    const a = areaMatchScore(pq, names);
+    if (a === null) return postalOk;          // δεν ξέρουμε περιοχή -> ΤΚ
+    if (a >= 0.6) return postalOk || near !== false;
+    return false;
+  }
+  // Η περιοχή όπως είναι γραμμένη (για αναζήτηση μόνο μέσα σε αυτήν), π.χ. «Γάζι»
+  function areaText(q) {
+    const parts = String(q).split(',').map((x) => x.replace(/\d+/g, ' ').replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const p = parts.slice(1).find((x) => !/^(ελλ[αά]δα|greece)$/i.test(x) && /\p{L}{3,}/u.test(x));
+    return p || '';
   }
 
-  const api = { norm, parseQuery, scoreFeature, pickBest, distKm, googleMatches };
+  const api = { norm, parseQuery, scoreFeature, pickBest, distKm, googleMatches, areaText };
   global.RootingGeo = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
