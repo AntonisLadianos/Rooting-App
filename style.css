@@ -277,3 +277,14 @@ textarea { resize: vertical; margin-bottom: 10px; }
 .ambig { display: inline-flex; align-items: center; gap: 4px; color: #b45309; font-weight: 600; }
 .chip-sm { border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 8px; padding: 2px 8px; font: inherit; font-size: 13px; min-height: 28px; cursor: pointer; }
 .chip-sm.on { background: #f59e0b; border-color: #f59e0b; color: #fff; }
+
+/* ---- Αποτυχία παράδοσης ---- */
+.pin-failed { background: var(--danger); }
+.btn-fail { background: rgba(220,38,38,.1); color: var(--danger); border: 1px solid rgba(220,38,38,.45); }
+.chip-fail { color: var(--danger); border-color: rgba(220,38,38,.45); }
+.drive .btn-fail { background: rgba(220,38,38,.18); color: #fca5a5; border-color: rgba(248,113,113,.5); }
+.fail-box summary { color: var(--danger); }
+.stop.failed { opacity: .75; }
+.stop.failed .num { background: var(--danger); }
+.stop.failed .stop-title { text-decoration: none; }
+.fail-txt { color: var(--danger); }

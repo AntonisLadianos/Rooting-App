@@ -58,7 +58,7 @@
           <div class="chips">
             <a id="btnFullRoute" class="chip">🗺 Google Maps</a>
             <button id="btnDrive" class="chip">🚗 Οδήγηση</button>
-            <button id="btnSkipNext" class="chip">⏭ Αργότερα</button>
+            <button id="btnFailNext" class="chip chip-fail">✗ Αποτυχία</button>
             <button id="btnReopt" class="chip">⚡ Νέα σειρά</button>
           </div>
         </div>
@@ -98,6 +98,10 @@
           <button id="btnClear" class="btn btn-link list-clear">🗑 Καθαρισμός</button>
         </div>
         <ol id="stops" class="stops"></ol>
+        <details id="failBox" class="done-box fail-box hidden" open>
+          <summary id="failSummary">✗ Αποτυχημένα</summary>
+          <ol id="failStops" class="stops"></ol>
+        </details>
         <details id="doneBox" class="done-box hidden">
           <summary id="doneSummary">Παραδόθηκαν</summary>
           <ol id="doneStops" class="stops"></ol>
