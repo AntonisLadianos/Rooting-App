@@ -32,10 +32,93 @@
     return workerP;
   }
 
+  // Δεύτερη «γνώμη» μόνο με λατινικά, για αριθμούς σπιτιών που τελειώνουν σε 8/B («20B» διαβάζεται «208»)
+  let engP = null;
+  function getEngWorker() {
+    if (!engP) {
+      engP = global.Tesseract.createWorker('eng', 1, { workerPath: BASE + 'worker.min.js', corePath: BASE + 'core', langPath: BASE + 'lang' })
+        .then(async (w) => { await w.setParameters({ tessedit_pageseg_mode: '8' }); return w; });
+      engP.catch(() => { engP = null; });
+    }
+    return engP;
+  }
+  function cropWord(bmp, b, scale) {
+    const pad = Math.round((b.y1 - b.y0) * 0.4);
+    const x = Math.max(0, b.x0 - pad), y = Math.max(0, b.y0 - pad);
+    const w = Math.min(bmp.width - x, b.x1 - b.x0 + 2 * pad), h = Math.min(bmp.height - y, b.y1 - b.y0 + 2 * pad);
+    const c = document.createElement('canvas');
+    c.width = w * scale; c.height = h * scale;
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(bmp, x, y, w, h, 0, 0, c.width, c.height);
+    const d = ctx.getImageData(0, 0, c.width, c.height), px = d.data;
+    for (let i = 0; i < px.length; i += 4) { const v = (px[i] * 0.3 + px[i + 1] * 0.59 + px[i + 2] * 0.11) > 150 ? 255 : 0; px[i] = px[i + 1] = px[i + 2] = v; }
+    ctx.putImageData(d, 0, 0);
+    return c;
+  }
+
+  // Επιστρέφει { text, ambig: [{ read: '208', alt: '20B' }] }
   async function recognize(file, onProgress) {
     const w = await getWorker(onProgress);
-    const r = await w.recognize(file);
-    return r.data.text || '';
+    const r = await w.recognize(file, {}, { text: true, blocks: true });
+    const text = (r.data && r.data.text) || '';
+    const ambig = [];
+    try {
+      const words = [];
+      (r.data.blocks || []).forEach((b) => b.paragraphs.forEach((p) => p.lines.forEach((l) => l.words.forEach((x) => words.push(x)))));
+      const cands = words.filter((x) => /^\d{1,3}[8BΒ][,.]?$/.test(x.text));
+      if (cands.length && global.createImageBitmap) {
+        const bmp = await createImageBitmap(file);
+        const ew = await getEngWorker();
+        for (const c of cands) {
+          const t = ((await ew.recognize(cropWord(bmp, c.bbox, 4))).data.text || '').trim();
+          const m = t.match(/(\d{1,3}[8BΒ])/);
+          const a = c.text.replace(/[,.]$/, '');
+          if (m && m[1] !== a && m[1].slice(0, -1) === a.slice(0, -1)) ambig.push({ read: a, alt: m[1].replace('Β', 'B') });
+        }
+      }
+    } catch (e) { /* χωρίς δεύτερη γνώμη */ }
+    return { text, ambig };
+  }
+
+  // Εφαρμόζει τις αμφιβολίες 8/B στις διευθύνσεις: βάζει την εκδοχή με γράμμα και κρατά την άλλη ως επιλογή
+  function applyAmbig(items, ambig) {
+    ambig.forEach(({ read, alt }) => {
+      const re = new RegExp('(^|[^\\d\\p{L}])' + read + '(?![\\d\\p{L}])', 'u');
+      items.forEach((it) => {
+        if (!it.ambig && re.test(it.address)) {
+          const withAlt = it.address.replace(re, '$1' + alt);
+          it.ambig = { a: alt, b: read, addrA: withAlt, addrB: it.address };
+          it.address = withAlt;
+        }
+      });
+    });
+    return items;
+  }
+
+  // «Υαζι» -> «Γαζι» όταν η «Γαζι» εμφανίζεται σε πολλές άλλες διευθύνσεις και διαφέρει κατά ένα γράμμα
+  function fixAreas(items) {
+    const word = (s) => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const freq = new Map();
+    items.forEach((it) => it.address.split(',').slice(1).join(' ').split(/\s+/).forEach((w) => { if (/^\p{L}{4,}$/u.test(w)) freq.set(word(w), (freq.get(word(w)) || 0) + 1); }));
+    const common = [...freq.entries()].filter(([, n]) => n >= 2).map(([w]) => w);
+    const near1 = (a, b) => a.length === b.length && [...a].filter((ch, i) => ch !== b[i]).length === 1;
+    items.forEach((it) => {
+      // κολλημένο «22Υαζι» -> «22, Υαζι»
+      it.address = it.address.replace(/(\d)(\p{Lu}\p{Ll}{3,})/u, '$1, $2');
+      const parts = it.address.split(',');
+      if (parts.length < 2) return;
+      const head = parts.shift();
+      it.address = head + ',' + parts.join(',').replace(/\p{L}{4,}/gu, (w) => {
+        const lw = word(w);
+        if ((freq.get(lw) || 0) >= 2) return w;
+        const m = common.find((c) => near1(lw, c));
+        if (!m) return w;
+        const orig = items.map((x) => x.address.match(new RegExp('\\p{L}{4,}', 'gu')) || []).flat().find((x) => word(x) === m);
+        return orig || w;
+      });
+    });
+    return items;
   }
 
   // ---------- Ανάλυση κειμένου ----------
@@ -49,6 +132,7 @@
     // αφαίρεση «σκουπιδιών» από εικονίδια στην αρχή της γραμμής (π.χ. "ΟΦ ", "ς. ", "'. ")
     for (let k = 0; k < 2; k++) {
       s = s.replace(/^[^\p{L}\d(]+/u, '');
+      if (/^(Ελ|Αγ|Οδ|Λ\.|Γ\.|Ν\.|Κ\.|Π\.)\s/u.test(s)) break; // συντομογραφίες οδών («Ελ Γκρέκο», «Αγ. Νικολάου»)
       s = s.replace(/^[\p{L}\d]{1,2}[^\p{L}\d\s(]*\s+(?=[\p{Lu}(\d])/u, '');
       s = s.replace(/^[\p{Lu}\d]{1,2}[^\p{L}\d\s(]*\s+(?=\p{Ll}{3,})/u, ''); // «ΟΦ θεοφανους»
     }
@@ -172,16 +256,33 @@
       if (!RE_CUSTOMER.test(clean(seg[0]))) return; // π.χ. «Παράδοση σε Αποθήκη», Clever Point
       const lines = seg.map(clean).filter((l) => l.length > 1);
       const found = extract(seg.slice(1).join('\n'));
-      if (!found.length) return;
-      const it = found[0];
       let nameLine = lines[1] && looksLikeName(lines[1]) ? lines[1] : '';
+      let addrStart = nameLine ? 2 : 1;
       // όνομα σε δύο γραμμές («Σταυρουλα Καναβακη» / «Τζώρτζογλου»)
-      if (nameLine && lines[2] && /^\p{L}{3,}$/u.test(lines[2]) && !isNoise(lines[2])) nameLine += ' ' + lines[2];
+      if (nameLine && lines[2] && /^\p{L}{3,}$/u.test(lines[2]) && !isNoise(lines[2])) { nameLine += ' ' + lines[2]; addrStart = 3; }
       const phoneLine = lines.find(isPhoneLine);
+      // Διεύθυνση = ΟΛΕΣ οι γραμμές ανάμεσα στο όνομα και στο τηλέφωνο (ή στο τέλος της καρτέλας)
+      const addrLines = [];
+      for (let k2 = addrStart; k2 < lines.length; k2++) {
+        const l = lines[k2];
+        if (isPhoneLine(l) || isCardEnd(l) || isNoise(l)) break;
+        const toks = l.split(' ');
+        if (toks.filter((t) => t.length <= 1).length * 2 >= toks.length && toks.length > 1) continue; // «& Ρρητης ζ ρ 0» (σκουπίδι εικονιδίου)
+        addrLines.push(l.replace(/(\s+[^\p{L}\d\s]+)+$/u, '').trim()); // «… Ηράκλειο  [[]»
+      }
+      // κομμένη καρτέλα: η τελευταία (μισή) γραμμή χωρίς αριθμό είναι συνήθως σκουπίδι («ΛΠΣΩΞ Ελλ»)
+      if (!phoneLine && !lines.some(isCardEnd) && addrLines.length > 1 && !/\d/.test(addrLines[addrLines.length - 1])) addrLines.pop();
+      let address = '';
+      if (addrLines.length) {
+        address = addrLines.reduce((acc, l) => !acc ? l : (/[,\-–]\s*$/.test(acc) ? acc + ' ' + l : acc + ', ' + l), '');
+        address = tidyAddress(address.replace(/\s+-\s*,/g, ',').replace(/\s+-\s+/g, ', '));
+      }
+      if (!address || address.length < 5) { if (!found.length) return; address = found[0].address; }
+      const it = found[0] || {};
       cards.push({
-        address: it.address,
-        name: nameLine || it.name,
-        phone: phoneLine ? normPhone(phoneLine) : it.phone,
+        address,
+        name: nameLine || it.name || '',
+        phone: phoneLine ? normPhone(phoneLine) : (it.phone || ''),
         closed: lines.some(isCardEnd) || !!phoneLine
       });
     });
@@ -236,7 +337,7 @@
   }
   function RootingKey(s) { return key(s); }
 
-  const api = { recognize, extract, extractImage, key, tidyAddress, mergeAcross };
+  const api = { recognize, extract, extractImage, key, tidyAddress, mergeAcross, applyAmbig, fixAreas };
   global.RootingOCR = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

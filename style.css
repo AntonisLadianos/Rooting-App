@@ -273,3 +273,7 @@ textarea { resize: vertical; margin-bottom: 10px; }
 .failed-list li { margin-bottom: 8px; }
 .sugg { font-size: 13px; color: var(--muted); margin-top: 4px; }
 .sugg-btn { min-height: 32px; padding: 4px 10px; font-size: 13px; margin-left: 6px; }
+
+.ambig { display: inline-flex; align-items: center; gap: 4px; color: #b45309; font-weight: 600; }
+.chip-sm { border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 8px; padding: 2px 8px; font: inherit; font-size: 13px; min-height: 28px; cursor: pointer; }
+.chip-sm.on { background: #f59e0b; border-color: #f59e0b; color: #fff; }

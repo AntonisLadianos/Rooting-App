@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '17';
+  const APP_VERSION = '18';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // ---------- Κατάσταση ----------
@@ -929,16 +929,17 @@
   $('shotInput').addEventListener('change', async (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
-    const found = [], perImage = [];
+    const found = [], perImage = [], allAmbig = [];
     try {
       for (let i = 0; i < files.length; i++) {
         const label = files.length > 1 ? `Διαβάζω εικόνα ${i + 1}/${files.length}` : 'Διαβάζω την εικόνα';
         busy(true, label + '…');
-        const text = await RootingOCR.recognize(files[i], (m) => {
+        const { text, ambig } = await RootingOCR.recognize(files[i], (m) => {
           if (m.status === 'recognizing text') busy(true, `${label}… ${Math.round((m.progress || 0) * 100)}%`);
           else if (/loading|initializ/.test(m.status)) busy(true, 'Προετοιμασία αναγνώρισης κειμένου…\n(μόνο την πρώτη φορά αργεί)');
         });
         perImage.push(RootingOCR.extractImage(text));
+        allAmbig.push(...ambig);
       }
     } catch (err) {
       console.error(err);
@@ -947,7 +948,7 @@
       return;
     }
     busy(false);
-    found.push(...RootingOCR.mergeAcross(perImage)); // ενώνει διευθύνσεις κομμένες ανάμεσα σε δύο εικόνες
+    found.push(...RootingOCR.fixAreas(RootingOCR.applyAmbig(RootingOCR.mergeAcross(perImage), allAmbig)));
     // διπλότυπα (επικαλυπτόμενα screenshots ή ήδη στη λίστα)
     const existing = new Set(S.stops.map((s) => RootingOCR.key(s.orig || '')));
     const seen = new Set();
@@ -974,7 +975,7 @@
           <input type="checkbox" id="fc${i}" ${it.dup || it.fragment ? '' : 'checked'}>
           <div class="found-body">
             <input type="text" id="fa${i}" value="${esc(it.address)}">
-            <small>${[it.name ? '👤 ' + esc(it.name) : '', it.phone ? '📞 ' + esc(it.phone) : '', it.dup ? '<b>υπάρχει ήδη</b>' : '', it.fragment ? '<b>⚠️ κομμάτι διεύθυνσης — συμπλήρωσε την οδό</b>' : ''].filter(Boolean).join(' · ')}</small>
+            <small>${[it.name ? '👤 ' + esc(it.name) : '', it.phone ? '📞 ' + esc(it.phone) : '', it.dup ? '<b>υπάρχει ήδη</b>' : '', it.ambig ? `<span class="ambig">⚠️ Αριθμός: <button class="chip-sm on" data-i="${i}" data-v="a">${esc(it.ambig.a)}</button> ή <button class="chip-sm" data-i="${i}" data-v="b">${esc(it.ambig.b)}</button>;</span>` : '', it.fragment ? '<b>⚠️ κομμάτι διεύθυνσης — συμπλήρωσε την οδό</b>' : ''].filter(Boolean).join(' · ')}</small>
           </div>
         </li>`).join('')}</ul>
       <button class="btn btn-primary btn-block" id="foundGo">Προσθήκη</button>
@@ -983,6 +984,13 @@
       const count = () => items.filter((_, i) => b.querySelector('#fc' + i).checked).length;
       const upd = () => { btn.textContent = `Προσθήκη ${count()} στάσεων`; btn.disabled = !count(); };
       items.forEach((_, i) => b.querySelector('#fc' + i).addEventListener('change', upd));
+      b.querySelectorAll('.chip-sm').forEach((ch) => {
+        ch.onclick = () => {
+          const it = items[+ch.dataset.i];
+          b.querySelector('#fa' + ch.dataset.i).value = ch.dataset.v === 'a' ? it.ambig.addrA : it.ambig.addrB;
+          ch.parentNode.querySelectorAll('.chip-sm').forEach((x) => x.classList.toggle('on', x === ch));
+        };
+      });
       upd();
       btn.onclick = async () => {
         const chosen = items.map((it, i) => ({ it, on: b.querySelector('#fc' + i).checked, addr: b.querySelector('#fa' + i).value.trim() }))
