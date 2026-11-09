@@ -327,3 +327,16 @@ body.navigating #map { bottom: calc(132px + var(--safe-bottom)) !important; }
 .na-big small { font-size: 14px; font-weight: 500; opacity: .9; }
 .na-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
 .na-row .btn { min-height: 52px; }
+
+/* ---- Δέματα / πελάτες ανά στάση ---- */
+.pkg-badge { display: inline-block; background: var(--line); color: var(--text); border-radius: 8px; padding: 2px 8px; font-weight: 700; }
+.pkg-badge.multi, .found-list .pkg-badge { background: #f59e0b; color: #fff; }
+.next-pkgs { display: inline-block; margin: 2px 0 4px; font-weight: 700; font-size: 14px; color: var(--muted); }
+.next-pkgs:empty { display: none; }
+.next-pkgs.multi { background: #f59e0b; color: #fff; padding: 3px 10px; border-radius: 8px; font-size: 15px; }
+.merge-note { color: var(--primary); }
+.pkg-line { margin: -6px 0 10px; }
+.people { list-style: none; padding: 0; margin: 0 0 12px; }
+.people li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.people li .btn { min-height: 36px; padding: 4px 10px; font-size: 14px; }
+.drive .pkg-badge { font-size: 18px; padding: 4px 12px; }

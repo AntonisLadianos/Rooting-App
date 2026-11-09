@@ -234,6 +234,34 @@
   // τελειώνει με «N πακέτο/πακέτα …» και τον κωδικό αποστολής («AZP - 94GOE7WM4WK6J»).
   const RE_HEADER = /παρ[αά]δοση\s*σε\s*\S+|παραλαβ[ήη]\s*(απ[οό]|σε)|clever\s*point/i;
   const RE_CUSTOMER = /παρ[αά]δοση\s*σε\s*πελ[αά]τη|παραλαβ[ήη]\s*(απ[οό]|σε)\s*πελ[αά]τη/i;
+  // «1 πακέτο παράδοση» / «2 πακέτα …» (το 1 συχνά διαβάζεται Ί/I/l)
+  function pkgCount(lines) {
+    const l = lines.find((x) => /πακ[εέ]τ/i.test(x));
+    if (!l) return 0;
+    const m = l.match(/([0-9ΊIl|]{1,2})\s*πακ[εέ]τ/i);
+    if (!m) return 1;
+    const n = parseInt(m[1].replace(/[ΊIl|]/g, '1'), 10);
+    return n > 0 && n < 50 ? n : 1;
+  }
+  const RE_CODE = /^\S{1,5}\s*-+\s*-?\s*([\p{L}\d][\p{L}\d.)\]]{5,})/u;
+  function codesOf(lines) {
+    return lines.map((l) => (l.match(RE_CODE) || [])[1]).filter(Boolean).map(normCode).filter((c) => c.length >= 6);
+  }
+  // κωδικοί αποστολής: ενοποίηση γραμμάτων που μοιάζουν (ελληνικά/λατινικά, O/0, I/1 …) για σύγκριση
+  const LOOK = { Α: 'A', Β: 'B', Ε: 'E', Ζ: 'Z', Η: 'H', Ι: 'I', Κ: 'K', Μ: 'M', Ν: 'N', Ο: 'O', Ρ: 'P', Τ: 'T', Υ: 'Y', Χ: 'X', Ω: 'W', Λ: 'A', Δ: 'A', Θ: '8', Φ: 'O' };
+  function normCode(s) {
+    return String(s).toUpperCase().replace(/[Α-Ω]/g, (c) => LOOK[c] || c).replace(/[^A-Z0-9]/g, '')
+      .replace(/[OQD]/g, '0').replace(/[ILJ]/g, '1').replace(/Z/g, '2').replace(/S/g, '5').replace(/B/g, '8').replace(/G/g, '6').replace(/V/g, 'Y');
+  }
+  function lev(a, b) {
+    const m = a.length, n = b.length, d = Array.from({ length: m + 1 }, (_, i) => [i]);
+    for (let j = 1; j <= n; j++) d[0][j] = j;
+    for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    return d[m][n];
+  }
+  function sameCode(a, b) { return lev(a, b) <= Math.max(2, Math.floor(Math.max(a.length, b.length) * 0.3)); }
+  function codesOverlap(A, B) { return A.some((a) => B.some((b) => sameCode(a, b))); }
+
   function isCardEnd(s) { return /πακ[εέ]τ/i.test(s) || /^\S{1,4}\s*-+\s*-?\s*[\p{L}\d]{6,}/u.test(s); }
   function hasStreet(addr) { const first = String(addr).split(',')[0]; return /\p{L}{3,}/u.test(first) && /\d/.test(first.replace(/\b\d{3}\s?\d{2}\b/, '')); }
   function isTailOnly(it) {
@@ -284,20 +312,21 @@
       if (!address || address.length < 5) { if (!found.length) return; address = found[0].address; }
       const it = found[0] || {};
       cards.push({
+        pkgs: pkgCount(lines), codes: codesOf(lines),
         address,
         name: nameLine || it.name || '',
         phone: phoneLine ? normPhone(phoneLine) : (it.phone || ''),
         closed: lines.some(isCardEnd) || !!phoneLine
       });
     });
-    return { cards, pre, prePhone: prePhone ? normPhone(prePhone) : '' };
+    return { cards, pre, prePhone: prePhone ? normPhone(prePhone) : '', prePkgs: pkgCount(preLines), preCodes: codesOf(preLines) };
   }
 
   // Ενώνει τα αποτελέσματα πολλών screenshots (με τη σειρά που τραβήχτηκαν).
   function mergeAcross(perImage) {
     const out = [];
     let lastOpen = null; // τελευταία καρτέλα του προηγούμενου screenshot, αν κόπηκε
-    perImage.forEach((img) => {
+    perImage.forEach((img, imgNo) => {
       if (Array.isArray(img)) img = { cards: null, items: img };
       if (img.cards === null) {
         // χωρίς καρτέλες: παλιά λογική (κομμένη = έχει οδό, όχι ΤΚ, όχι τηλέφωνο, και είναι τελευταία)
@@ -309,7 +338,7 @@
         }
         lastOpen = null;
         items.forEach((it, i) => {
-          const x = Object.assign({}, it);
+          const x = Object.assign({ img: imgNo }, it);
           if (isTailOnly(x)) x.fragment = true;
           out.push(x);
           if (i === items.length - 1 && hasStreet(x.address) && !RE_POSTAL.test(x.address) && !x.phone) lastOpen = x;
@@ -322,7 +351,7 @@
           // συνέχεια κομμένης καρτέλας με ολόκληρη τη διεύθυνση, ή καρτέλα που της κόπηκε η αρχή
           if (lastOpen && RootingKey(p.address).startsWith(RootingKey(lastOpen.address.split(',')[0]))) {
             lastOpen.address = p.address; lastOpen.phone = lastOpen.phone || p.phone;
-          } else out.push(Object.assign({}, p));
+          } else out.push(Object.assign({ img: imgNo }, p));
         } else if (lastOpen) {
           lastOpen.address = tidyAddress(lastOpen.address.replace(/[,\s]+$/, '') + ', ' + p.address);
           lastOpen.phone = lastOpen.phone || p.phone;
@@ -330,9 +359,11 @@
         // αλλιώς: σκέτοι κωδικοί/κομμάτια ολοκληρωμένης καρτέλας -> αγνοούνται
       });
       if (lastOpen && !lastOpen.phone && img.prePhone) lastOpen.phone = img.prePhone;
+      if (lastOpen && !lastOpen.pkgs && img.prePkgs) lastOpen.pkgs = img.prePkgs;
+      if (lastOpen && img.preCodes && img.preCodes.length) lastOpen.codes = (lastOpen.codes || []).concat(img.preCodes);
       lastOpen = null;
       img.cards.forEach((c, i) => {
-        const x = { address: c.address, name: c.name, phone: c.phone };
+        const x = { address: c.address, name: c.name, phone: c.phone, pkgs: c.pkgs, codes: c.codes, img: imgNo };
         out.push(x);
         if (i === img.cards.length - 1 && !c.closed) lastOpen = x;
       });
@@ -341,7 +372,54 @@
   }
   function RootingKey(s) { return key(s); }
 
-  const api = { recognize, extract, extractImage, key, tidyAddress, mergeAcross, applyAmbig, fixAreas };
+  // ---------- Ίδια διεύθυνση = μία στάση ----------
+  // Κλειδί διεύθυνσης: οδός + αριθμός (πρώτο κομμάτι), χωρίς τόνους/κεφαλαία
+  function addrKey(a) { return key(String(a).split(',')[0]); }
+  function nameKey(n) { return key(n || ''); }
+  // Επιστρέφει στάσεις { address, people: [{name, phone, pkgs, codes}], pkgs, name, phone, codes }
+  //  • ίδια καρτέλα σε δύο διαδοχικά screenshots (επικάλυψη) -> μετράει μία φορά
+  //  • δύο καρτέλες στο ΙΔΙΟ screenshot -> πάντα διαφορετικά δέματα
+  function groupCards(items) {
+    const groups = [];
+    items.forEach((it) => {
+      const k = addrKey(it.address);
+      const person = { name: it.name || '', phone: it.phone || '', pkgs: it.pkgs || 1, codes: it.codes || [], img: it.img };
+      let g = k.length >= 4 ? groups.find((x) => x.key === k) : null;
+      if (!g) {
+        groups.push(Object.assign({}, it, { key: k, people: [person] }));
+        return;
+      }
+      // είναι η ίδια καρτέλα (επικάλυψη screenshots);
+      const dup = g.people.find((p) => p.img !== person.img && nameKey(p.name) === nameKey(person.name) &&
+        (!p.codes.length || !person.codes.length || codesOverlap(p.codes, person.codes)));
+      if (dup) {
+        dup.phone = dup.phone || person.phone;
+        dup.pkgs = Math.max(dup.pkgs, person.pkgs);
+        dup.codes = dup.codes.concat(person.codes.filter((c) => !dup.codes.some((d) => sameCode(c, d))));
+        if (person.address && person.address.length > g.address.length && addrKey(person.address) === k) g.address = it.address;
+        return;
+      }
+      g.people.push(person); // άλλη καρτέλα στην ίδια διεύθυνση
+      if (it.ambig && !g.ambig) g.ambig = it.ambig;
+    });
+    groups.forEach((g) => {
+      // ίδιος πελάτης σε πολλές καρτέλες -> μία γραμμή με άθροισμα δεμάτων
+      const byName = [];
+      g.people.forEach((p) => {
+        const e = byName.find((x) => nameKey(x.name) === nameKey(p.name));
+        if (e) { e.pkgs += p.pkgs; e.phone = e.phone || p.phone; e.codes = e.codes.concat(p.codes); } else byName.push(Object.assign({}, p));
+      });
+      g.people = byName;
+      g.pkgs = byName.reduce((a, p) => a + (p.pkgs || 1), 0);
+      g.name = byName.map((p) => p.name).filter(Boolean).join(' · ');
+      g.phone = (byName.find((p) => p.phone) || {}).phone || '';
+      g.codes = byName.flatMap((p) => p.codes);
+      delete g.key;
+    });
+    return groups;
+  }
+
+  const api = { recognize, extract, extractImage, key, tidyAddress, mergeAcross, applyAmbig, fixAreas, groupCards, addrKey, codesOverlap, normCode };
   global.RootingOCR = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
