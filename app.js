@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '21';
+  const APP_VERSION = '22';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // ---------- Κατάσταση ----------
@@ -203,14 +203,18 @@
     const geocoder = await loadGoogle();
     const req = { address: q, region: 'gr', componentRestrictions: Object.assign({ country: 'GR' }, restrict || {}) };
     if (near) req.bounds = { south: near.lat - 0.3, west: near.lng - 0.4, north: near.lat + 0.3, east: near.lng + 0.4 };
-    countGoogle();
     let resp;
-    try { resp = await geocoder.geocode(req); }
-    catch (e) {
-      const code = (e && e.code) || '';
-      if (code === 'ZERO_RESULTS') return null;
-      if (code === 'REQUEST_DENIED' && !googleBadKeyWarned) { googleBadKeyWarned = true; toast('Η Google αρνήθηκε το κλειδί — έλεγξε τις ρυθμίσεις του'); }
-      throw e;
+    for (let attempt = 0; ; attempt++) {
+      countGoogle();
+      try { resp = await geocoder.geocode(req); break; }
+      catch (e) {
+        const code = (e && e.code) || '';
+        if (code === 'ZERO_RESULTS') return null;
+        // «πολλές αναζητήσεις μαζί»: περιμένουμε λίγο και ξαναρωτάμε τη Google (όχι δωρεάν αναζήτηση)
+        if (code === 'OVER_QUERY_LIMIT' && attempt < 4) { await new Promise((r) => setTimeout(r, 800 * (attempt + 1) + Math.random() * 400)); continue; }
+        if (code === 'REQUEST_DENIED' && !googleBadKeyWarned) { googleBadKeyWarned = true; toast('Η Google αρνήθηκε το κλειδί — έλεγξε τις ρυθμίσεις του'); }
+        throw e;
+      }
     }
     const r = resp && resp.results && resp.results[0];
     if (!r) return null;
@@ -505,8 +509,7 @@
       if (eta) sub.push(`Άφιξη ~${fmtClock(eta.at)}`);
       if (nextStop.note) sub.push(nextStop.note);
       $('nextSub').textContent = sub.join(' · ');
-      $('btnNavNext').href = navUrl(nextStop);
-      if (navUrl(nextStop).startsWith('http')) $('btnNavNext').target = '_blank'; else $('btnNavNext').removeAttribute('target');
+      bindNavLink($('btnNavNext'), nextStop);
       $('btnDoneNext').onclick = () => markDone(nextStop.id, true, true);
       $('btnFailNext').onclick = () => markFailed(nextStop.id);
       $('btnFullRoute').textContent = '🗺 ' + chunkLabel();
@@ -593,6 +596,63 @@
       default: return `https://maps.apple.com/?daddr=${ll}&dirflg=d`;
     }
   }
+
+  // ---------- Πλοήγηση: μέσα στην εφαρμογή ή εξωτερική εφαρμογή ----------
+  function inApp() { return S.settings.navApp === 'inapp'; }
+  function navigateTo(s) {
+    if (!s) return;
+    if (inApp()) startInAppNav(s);
+    else openUrl(navUrl(s));
+  }
+  // συνδέει ένα κουμπί/σύνδεσμο «Πλοήγηση» με τη σωστή συμπεριφορά
+  function bindNavLink(a, s) {
+    if (!a) return;
+    if (inApp()) { a.removeAttribute('href'); a.removeAttribute('target'); a.onclick = (e) => { e.preventDefault(); navigateTo(s); }; }
+    else { const u = navUrl(s); a.href = u; if (u.startsWith('http')) a.target = '_blank'; else a.removeAttribute('target'); a.onclick = null; }
+  }
+  let navStop = null;
+  function startInAppNav(s) {
+    if (driveOpen) closeDrive();
+    closeModal();
+    navStop = s;
+    $('navArrive').classList.add('hidden');
+    renderNavUndo();
+    RootingNav.start({
+      dest: { lat: s.lat, lng: s.lng, title: title(s) },
+      from: myPos, mv, osrm: OSRM, muted: !!S.settings.navMuted,
+      getPos: () => getPosition(8000),
+      onPos: (p) => { myPos = p; showMe(); rememberPos(); },
+      onArrive: () => showArrive(s),
+      onExit: () => { navStop = null; render(); setSheet('peek'); setTimeout(fitAll, 300); }
+    });
+  }
+  function showArrive(s) {
+    $('navArriveTitle').textContent = title(s);
+    $('navArriveNote').textContent = [s.note ? '📝 ' + s.note : ''].filter(Boolean).join(' ');
+    const call = $('navCall');
+    call.classList.toggle('hidden', !s.phone);
+    if (s.phone) call.href = 'tel:' + s.phone.replace(/\s/g, '');
+    $('navArrive').classList.remove('hidden');
+  }
+  function navFinishStop(failed) {
+    const s = navStop;
+    if (!s) return;
+    if (failed) markFailed(s.id); else markDone(s.id, true);
+    const next = orderedStops().find((x) => !x.done);
+    if (next) startInAppNav(next);
+    else { RootingNav.stop(); toast('🎉 Τελείωσες όλες τις στάσεις!'); }
+  }
+  function renderNavUndo() {
+    $('navUndo').innerHTML = undoLastHtml('undo-last');
+    $('navUndo').querySelectorAll('[data-undo-last]').forEach((b) => {
+      b.onclick = () => { const s = lastDoneStop(); if (!s) return; S.lastDone = null; markDone(s.id, false); toast('Η στάση επανήλθε'); startInAppNav(s); };
+    });
+  }
+  $('navExit').onclick = () => RootingNav.stop();
+  $('navMute').onclick = () => { S.settings.navMuted = RootingNav.toggleMute(); save(); };
+  $('navDone').onclick = () => navFinishStop(false);
+  $('navFail').onclick = () => navFinishStop(true);
+  $('navDoneMan').onclick = () => { if (navStop && confirm(`Παραδόθηκε: ${title(navStop).split(',')[0]};`)) navFinishStop(false); };
 
   // Όλη η υπόλοιπη διαδρομή στο Google Maps (έως 10 στάσεις: 9 ενδιάμεσες + προορισμός)
   const GM_CHUNK = 10;
@@ -734,7 +794,7 @@
     el.innerHTML = `<div class="mp-title">${esc(title(s))}</div>
       ${s.note ? `<div class="mp-note">📝 ${esc(s.note)}</div>` : ''}
       <div class="mp-btns">
-        <a class="btn btn-primary" href="${esc(url)}"${url.startsWith('http') ? ' target="_blank" rel="noopener"' : ''}>➤</a>
+        <a class="btn btn-primary" data-a="nav" href="${esc(url)}"${url.startsWith('http') ? ' target="_blank" rel="noopener"' : ''}>➤</a>
         <button class="btn ${s.done ? 'btn-ghost' : 'btn-success'}" data-a="done">${s.done ? '↺' : '✓ Παραδόθηκε'}</button>
         ${!s.done ? '<button class="btn btn-fail" data-a="fail">✗</button>' : ''}
         ${s.phone ? `<a class="btn btn-ghost" href="tel:${esc(s.phone.replace(/\s/g, ''))}">📞</a>` : ''}
@@ -742,6 +802,7 @@
       </div>`;
     el.querySelector('[data-a="done"]').onclick = () => { mv.closePopup(); markDone(s.id, !s.done, true); };
     el.querySelector('[data-a="more"]').onclick = () => { mv.closePopup(); openStop(s.id); };
+    if (inApp()) bindNavLink(el.querySelector('[data-a="nav"]'), s);
     const pf = el.querySelector('[data-a="fail"]');
     if (pf) pf.onclick = () => { mv.closePopup(); markFailed(s.id); };
     mv.popup(s.lat, s.lng, el);
@@ -803,7 +864,7 @@
       <p class="stop-full">${esc(title(s))}</p>
       ${s.orig ? `<p class="muted small">Στον χάρτη: ${esc(s.label)}${s.exact === false ? ' (βρέθηκε μόνο ο δρόμος — η πλοήγηση θα ψάξει τον ακριβή αριθμό)' : ''}</p>` : ''}
       <div class="grid2">
-        <a class="btn btn-primary" href="${esc(navUrl(s))}"${navUrl(s).startsWith('http') ? ' target="_blank" rel="noopener"' : ''}>➤ Πλοήγηση</a>
+        <a class="btn btn-primary" id="mNav" href="${esc(navUrl(s))}"${navUrl(s).startsWith('http') ? ' target="_blank" rel="noopener"' : ''}>➤ Πλοήγηση</a>
         <button class="btn ${s.done ? 'btn-ghost' : 'btn-success'}" id="mDone">${s.failed ? '↺ Επαναφορά' : (s.done ? '↺ Δεν παραδόθηκε' : '✓ Παραδόθηκε')}</button>
       </div>
       ${!s.done ? '<button class="btn btn-fail btn-block" id="mFail">✗ Αποτυχία παράδοσης</button>' : ''}
@@ -820,6 +881,7 @@
       b.querySelector('#mNote').addEventListener('change', persist);
       b.querySelector('#mPhone').addEventListener('change', persist);
       b.querySelector('#mDone').onclick = () => { persist(); markDone(s.id, !s.done, true); closeModal(); };
+      bindNavLink(b.querySelector('#mNav'), s);
       const mf = b.querySelector('#mFail');
       if (mf) mf.onclick = () => { persist(); markFailed(s.id); closeModal(); };
       b.querySelector('#mUp').onclick = () => { persist(); moveStop(s.id, -1); };
@@ -1098,11 +1160,12 @@
   function openSettings(runTest) {
     const g = googleFullRouteUrl(true);
     openModal('Ρυθμίσεις', `
-      <label class="field"><span>Εφαρμογή πλοήγησης</span>
+      <label class="field"><span>Πλοήγηση με</span>
         <select id="sNav">
           <option value="apple">Apple Χάρτες</option>
           <option value="google">Google Maps</option>
           <option value="waze">Waze</option>
+          <option value="inapp">Μέσα στην εφαρμογή (με φωνή)</option>
         </select></label>
       <label class="field"><span>Χρόνος σε κάθε στάση (λεπτά)</span>
         <input id="sSvc" type="number" min="0" max="120" inputmode="numeric" value="${S.settings.serviceMin}"></label>
@@ -1365,7 +1428,7 @@
       </div>
       <button class="btn btn-ghost d-mid d-wide" id="dFull">🗺 ${chunkLabel()} στο Google Maps</button>
       <button class="btn btn-fail d-mid d-wide" id="dFail">✗ Αποτυχία παράδοσης</button>`;
-    $('dNav').onclick = () => openUrl(navUrl(next));
+    $('dNav').onclick = () => navigateTo(next);
     $('dFull').onclick = () => { const u = googleFullRouteUrl(); startBatch(); openUrl(u); };
     $('dDoneOnly').onclick = () => markDone(next.id, true, true);
     $('dFail').onclick = () => markFailed(next.id);
@@ -1373,7 +1436,7 @@
     $('dDoneGo').onclick = () => {
       markDone(next.id, true);
       const nn = orderedStops().find((s) => !s.done);
-      if (nn) openUrl(navUrl(nn));
+      if (nn) navigateTo(nn);
     };
   }
   $('btnDrive').onclick = openDrive;

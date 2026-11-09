@@ -131,6 +131,42 @@
     </div>
   </div>
 
+  <!-- Πλοήγηση μέσα στην εφαρμογή -->
+  <div id="nav" class="nav hidden">
+    <div class="nav-top">
+      <div class="nav-main">
+        <div id="navArrow" class="nav-arrow">↑</div>
+        <div class="nav-txt">
+          <div id="navDist" class="nav-dist"></div>
+          <div id="navText" class="nav-text"></div>
+        </div>
+      </div>
+      <div id="navThen" class="nav-then"></div>
+    </div>
+    <div id="navArrive" class="nav-arrive hidden">
+      <div class="na-label">🏁 Έφτασες</div>
+      <div id="navArriveTitle" class="na-title"></div>
+      <div id="navArriveNote" class="na-note"></div>
+      <button id="navDone" class="btn btn-success na-big">✓ Παραδόθηκε<small>και πάμε στην επόμενη</small></button>
+      <div class="na-row">
+        <button id="navFail" class="btn btn-fail">✗ Αποτυχία</button>
+        <a id="navCall" class="btn btn-ghost hidden">📞 Κλήση</a>
+      </div>
+    </div>
+    <div class="nav-bottom">
+      <div id="navUndo"></div>
+      <div class="nav-info">
+        <div><b id="navEta"></b><small>άφιξη</small></div>
+        <div class="nav-remain"><b id="navRemain"></b><small id="navDest"></small></div>
+      </div>
+      <div class="nav-btns">
+        <button id="navExit" class="btn nav-exit">✕ Τέλος</button>
+        <button id="navMute" class="btn nav-ic">🔊</button>
+        <button id="navDoneMan" class="btn nav-ic nav-ok">✓</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Λειτουργία οδήγησης -->
   <div id="drive" class="drive hidden">
     <div class="d-head">
@@ -148,6 +184,7 @@
   <script src="geo.js"></script>
   <script src="ocr.js"></script>
   <script src="mapview.js"></script>
+  <script src="navigate.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

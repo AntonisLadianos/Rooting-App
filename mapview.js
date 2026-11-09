@@ -14,6 +14,15 @@
 (function (global) {
   'use strict';
 
+  // σημείο λίγο μπροστά (προς την κατεύθυνση), ώστε ο οδηγός να φαίνεται στο κάτω μέρος της οθόνης
+  function ahead(p, heading, meters) {
+    const r = Math.PI / 180, d = meters / 6371000;
+    const lat = p.lat * r, lng = p.lng * r, h = (heading || 0) * r;
+    const lat2 = Math.asin(Math.sin(lat) * Math.cos(d) + Math.cos(lat) * Math.sin(d) * Math.cos(h));
+    const lng2 = lng + Math.atan2(Math.sin(h) * Math.sin(d) * Math.cos(lat), Math.cos(d) - Math.sin(lat) * Math.sin(lat2));
+    return { lat: lat2 / r, lng: lng2 / r };
+  }
+
   function pinEl(text, cls) {
     const d = document.createElement('div');
     d.className = 'pin ' + (cls || '');
@@ -42,11 +51,17 @@
       tiltInteractionEnabled: true,    // κλίση 3D
       isFractionalZoomEnabled: true
     });
-    let markers = [], line = null, me = null, info = null, traffic = null;
+    let markers = [], line = null, me = null, info = null, traffic = null, navLine = null;
 
     const view = {
       kind: 'google', canRotate: true, canTraffic: true, canSatellite: true, raw: map,
       setSatellite(on) { map.setMapTypeId(on ? 'hybrid' : 'roadmap'); },
+      follow(p, heading) { map.moveCamera({ center: ahead(p, heading, 70), heading: heading || 0, tilt: 50, zoom: 17.5 }); },
+      unfollow() { map.moveCamera({ heading: 0, tilt: 0, zoom: 14 }); },
+      setNavRoute(coords) {
+        if (navLine) { navLine.setMap(null); navLine = null; }
+        if (coords && coords.length) navLine = new Polyline({ path: coords.map((c) => ({ lat: c[0], lng: c[1] })), map, strokeColor: '#1d4ed8', strokeOpacity: 0.95, strokeWeight: 9, zIndex: 5 });
+      },
       setView(lat, lng, zoom) { map.moveCamera({ center: { lat, lng }, zoom: zoom || map.getZoom() }); },
       panTo(lat, lng) { map.panTo({ lat, lng }); },
       getZoom() { return map.getZoom() || 12; },
@@ -150,6 +165,12 @@
       popup(lat, lng, element) { L.popup().setLatLng([lat, lng]).setContent(element).openOn(map); },
       closePopup() { map.closePopup(); },
       resetNorth() {}, onRotate() {}, setTraffic() {}, canSatellite: false, setSatellite() {},
+      follow(p, heading) { map.setView([ahead(p, heading, 60).lat, ahead(p, heading, 60).lng], 17, { animate: true }); },
+      unfollow() { map.setZoom(14); },
+      setNavRoute(coords) {
+        if (this._nav) { map.removeLayer(this._nav); this._nav = null; }
+        if (coords && coords.length) this._nav = L.polyline(coords, { color: '#1d4ed8', weight: 8, opacity: 0.95 }).addTo(map);
+      },
       onLongPress(cb) { map.on('contextmenu', (e) => cb(e.latlng.lat, e.latlng.lng)); }
     };
   }
