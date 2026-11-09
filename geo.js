@@ -138,24 +138,28 @@
   //   περιοχή ταιριάζει  -> δεκτό (αν ο ΤΚ διαφωνεί, μόνο αν είναι κοντά: near = true)
   //   περιοχή διαφωνεί   -> απορρίπτεται, ό,τι κι αν λέει ο ΤΚ
   //   χωρίς περιοχή      -> αποφασίζει ο ΤΚ (ίδιος νομός)
-  function areaWordsOf(pq) { return pq.area.filter((w) => !/^[a-z]+$/.test(w)); } // λατινικά δεν συγκρίνονται αξιόπιστα
+  // λέξεις περιοχής: όχι λατινικά (δεν συγκρίνονται αξιόπιστα) και όχι «σκουπίδια» OCR 1-2 γραμμάτων
+  function areaWordsOf(pq) { return pq.area.filter((w) => !/^[a-z]+$/.test(w) && w.length >= 3); }
   function areaMatchScore(pq, text) {
     const aw = areaWordsOf(pq);
     if (!aw.length || !text) return null;
     return Math.max(0, ...aw.map((w) => nameScore([w], text)));
   }
-  function googleMatches(q, comps, near) {
+  // Δεκτό αν ταιριάζει η περιοχή Ή ο ΤΚ. Απορρίπτεται μόνο όταν διαφωνούν ΚΑΙ τα δύο
+  // (π.χ. «Γάζι 71414» -> «Μάλια 700 07»). Όταν ταιριάζει μόνο το ένα, πρέπει να είναι και κοντά (near).
+  function googleMatches(q, comps, near, formatted) {
     const pq = parseQuery(q);
     const get = (t) => (comps || []).filter((c) => c.types && c.types.includes(t));
     const pcC = get('postal_code')[0];
     const pc = pcC ? String(pcC.long_name || pcC.short_name || '').replace(/\s/g, '') : '';
-    const postalOk = !pq.postal || !pc || pc.slice(0, 2) === pq.postal.slice(0, 2);
-    const names = ['locality', 'sublocality', 'sublocality_level_1', 'neighborhood', 'postal_town',
-      'administrative_area_level_3', 'administrative_area_level_4', 'administrative_area_level_5', 'colloquial_area']
-      .flatMap(get).flatMap((c) => [c.long_name, c.short_name]).filter(Boolean).join(' ');
+    const postal2 = !pq.postal || !pc || pc.slice(0, 2) === pq.postal.slice(0, 2);
+    const postal3 = !!(pq.postal && pc && pc.slice(0, 3) === pq.postal.slice(0, 3));
+    const names = (comps || []).filter((c) => !(c.types || []).some((t) => t === 'route' || t === 'street_number' || t === 'country'))
+      .flatMap((c) => [c.long_name, c.short_name]).concat([formatted || '']).filter(Boolean).join(' ');
     const a = areaMatchScore(pq, names);
-    if (a === null) return postalOk;          // δεν ξέρουμε περιοχή -> ΤΚ
-    if (a >= 0.6) return postalOk || near !== false;
+    if (a === null) return postal2;                  // χωρίς περιοχή: αποφασίζει ο ΤΚ
+    if (a >= 0.6) return postal3 || (postal2 && near !== false) || near === true;
+    if (postal3) return near !== false;               // σωστός ΤΚ, η Google ονομάζει αλλιώς την περιοχή
     return false;
   }
   // Η περιοχή όπως είναι γραμμένη (για αναζήτηση μόνο μέσα σε αυτήν), π.χ. «Γάζι»

@@ -72,7 +72,9 @@
 
   // Μορφή για αναζήτηση: χωρίς χώρα και παρενθέσεις
   function tidyAddress(s) {
-    return s.replace(RE_COUNTRY, '').replace(/\s\d{3}(?=[,\s]*$)/, '').replace(/\b\d{6}\b/g, '').replace(/,\s*[\p{L}\d]{1,2}\s*$/u, '').replace(/[()]/g, ' ').replace(/\s+,/g, ',').replace(/,\s*,/g, ',')
+    // πετάμε κομμάτια μετά από κόμμα που είναι μόνο «σκουπίδια» (π.χ. «, ο, ην D»)
+    s = s.split(',').filter((p, i) => i === 0 || /\p{L}{3,}|\d{3}/u.test(p)).join(',');
+    return s.replace(RE_COUNTRY, '').replace(/(,[^,]*?)\s\d{3}(?=[,\s]*$)/, '$1').replace(/\b\d{6}\b/g, '').replace(/,\s*[\p{L}\d]{1,2}\s*$/u, '').replace(/[()]/g, ' ').replace(/\s+,/g, ',').replace(/,\s*,/g, ',')
       .replace(/\s+/g, ' ').replace(/[,\s]+$/, '').trim();
   }
 

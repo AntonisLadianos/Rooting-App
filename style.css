@@ -269,3 +269,7 @@ textarea { resize: vertical; margin-bottom: 10px; }
 .list-head h2 { white-space: nowrap; }
 #doneCount { white-space: nowrap; font-size: 14px; }
 .list-clear { display: inline-flex; white-space: nowrap; min-height: 36px; padding: 4px 6px; }
+
+.failed-list li { margin-bottom: 8px; }
+.sugg { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.sugg-btn { min-height: 32px; padding: 4px 10px; font-size: 13px; margin-left: 6px; }

@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '14';
+  const APP_VERSION = '15';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // ---------- Κατάσταση ----------
@@ -225,15 +225,27 @@
     };
   }
 
+  const rejected = new Map(); // διεύθυνση -> πρόταση Google που απορρίφθηκε
+  function stopsCenter() {
+    const pts = S.stops.filter((x) => !x.done);
+    if (!pts.length) return null;
+    const med = (a) => a.slice().sort((x, y) => x - y)[Math.floor(a.length / 2)];
+    return { lat: med(pts.map((p) => p.lat)), lng: med(pts.map((p) => p.lng)) };
+  }
+
   // region: {lat, lng} -> αναζήτηση μόνο γύρω από εκεί (~35 χλμ), και με σκέτο όνομα δρόμου
   async function geocodeSmart(q, region) {
     // Με κλειδί Google: πρώτα Google (1 αίτημα), και μόνο αν δεν βρει, τα δωρεάν
     if (googleEnabled()) {
       try {
         const near = region || searchBias();
-        const ok = (g) => g && RootingGeo.googleMatches(q, g.comps, RootingGeo.distKm(near, g) < 60) && (!region || RootingGeo.distKm(region, g) < 50);
+        // σημεία αναφοράς: η περιοχή του γύρου, η θέση μου, το κέντρο των στάσεων
+        const refs = [region, myPos, stopsCenter()].filter(Boolean);
+        const dist = (g) => Math.min(...refs.map((r) => RootingGeo.distKm(r, g)), refs.length ? Infinity : 0);
+        const ok = (g) => g && RootingGeo.googleMatches(q, g.comps, dist(g) < 60, g.label) && (!region || RootingGeo.distKm(region, g) < 50);
         let g = await googleGeocode(q, near);
         if (ok(g)) return g;
+        const first = g;
         if (g) {
           // λάθος περιοχή (π.χ. ίδια οδός σε άλλη πόλη): ψάχνουμε ΜΕΣΑ στην περιοχή που γράφει η διεύθυνση,
           // χωρίς τον ΤΚ (μπορεί να είναι αυτός λάθος)
@@ -249,6 +261,9 @@
             g = await googleGeocode(q, near, { postalCode: postal }).catch(() => null);
             if (ok(g)) return g;
           }
+          // πολύ κοντά στις άλλες στάσεις (<12 χλμ): σχεδόν σίγουρα σωστό
+          if (refs.length && dist(first) < 12) return first;
+          rejected.set(q, first); // κρατάμε την πρόταση της Google για να τη δει ο χρήστης
         }
       } catch (e) { /* συνεχίζουμε με τα δωρεάν */ }
     }
@@ -323,7 +338,7 @@
         if (googleEnabled() && /\d/.test(q) && q.length >= 6) {
           try {
             const g = await googleGeocode(q, searchBias());
-            if (g && RootingGeo.googleMatches(q, g.comps, RootingGeo.distKm(searchBias(), g) < 60)) res = [Object.assign(g, { label: '📍 ' + g.label })].concat(res.slice(0, 4));
+            if (g && RootingGeo.googleMatches(q, g.comps, RootingGeo.distKm(searchBias(), g) < 60, g.label)) res = [Object.assign(g, { label: '📍 ' + g.label })].concat(res.slice(0, 4));
           } catch (e) { /* μόνο τα δωρεάν */ }
         }
         if (seq !== searchSeq) return;
@@ -879,10 +894,24 @@
     const { added, failed, netErr } = out;
     logEl.innerHTML = `<p>✓ Προστέθηκαν ${added} στάσεις.</p>` + (failed.length ? `
       <p class="err">Δεν βρέθηκαν στον χάρτη (${failed.length}):</p>
-      <ul>${failed.map((f) => `<li>${esc(f.addr)}</li>`).join('')}</ul>
+      <ul class="failed-list">${failed.map((f, i) => {
+        const r = rejected.get(f.addr);
+        return `<li>${esc(f.addr)}${r ? `<div class="sugg">Google: ${esc(r.label)} <button class="btn btn-ghost sugg-btn" data-i="${i}">✓ Αυτό είναι</button></div>` : ''}</li>`;
+      }).join('')}</ul>
       ${netErr ? `<p class="muted small">⚠️ Η υπηρεσία αναζήτησης δεν απαντούσε για ${netErr} από αυτές. Περίμενε λίγο και πάτα «Ξαναδοκίμασε».</p>` : ''}
       <button class="btn btn-ghost btn-block" id="retryFailed">↻ Ξαναδοκίμασε όσες δεν βρέθηκαν</button>
       <p class="muted small">Όσες δεν βρίσκονται ούτε έτσι, λείπουν από τον δωρεάν χάρτη. Πρόσθεσέ τες από την αναζήτηση γράφοντας μόνο τον δρόμο ή πάτα παρατεταμένα στο σημείο πάνω στον χάρτη.</p>` : '');
+    logEl.querySelectorAll('.sugg-btn').forEach((bt) => {
+      bt.onclick = () => {
+        const f = failed[+bt.dataset.i], r = rejected.get(f.addr);
+        if (!r) return;
+        S.stops.push({ id: uid(), label: r.label, lat: r.lat, lng: r.lng, note: f.name || '', phone: f.phone || '', orig: f.addr, exact: r.exact, done: false });
+        rejected.delete(f.addr);
+        invalidateRoute(); save(); render();
+        bt.closest('li').remove();
+        toast('Προστέθηκε: ' + f.addr.split(',')[0]);
+      };
+    });
     if (failed.length) {
       logEl.querySelector('#retryFailed').onclick = async () => {
         logEl.querySelector('#retryFailed').disabled = true;
