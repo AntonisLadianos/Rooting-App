@@ -128,7 +128,29 @@
     return best;
   }
 
-  const api = { norm, parseQuery, scoreFeature, pickBest, distKm };
+  /*
+   * Έλεγχος αποτελέσματος Google: ταιριάζει ο ΤΚ και η περιοχή με αυτό που γράψαμε;
+   * comps = address_components της Google. Επιστρέφει false αν είναι σίγουρα άλλη περιοχή
+   * (π.χ. «Ελ. Βενιζέλου 171, Γάζι, 71414» -> Μάλια 700 07).
+   */
+  function googleMatches(q, comps) {
+    const pq = parseQuery(q);
+    const get = (t) => (comps || []).filter((c) => c.types && c.types.includes(t));
+    const pcC = get('postal_code')[0];
+    const pc = pcC ? String(pcC.long_name || pcC.short_name || '').replace(/\s/g, '') : '';
+    if (pq.postal && pc && pc.slice(0, 2) !== pq.postal.slice(0, 2)) return false; // άλλος νομός
+    const postalClose = !!(pq.postal && pc && pc.slice(0, 3) === pq.postal.slice(0, 3));
+    const areaWords = pq.area.filter((w) => !/^[a-z]+$/.test(w)); // λατινικά ονόματα δεν συγκρίνονται αξιόπιστα
+    if (!areaWords.length) return true;
+    const names = ['locality', 'sublocality', 'sublocality_level_1', 'neighborhood', 'postal_town',
+      'administrative_area_level_3', 'administrative_area_level_4', 'administrative_area_level_5', 'colloquial_area']
+      .flatMap(get).flatMap((c) => [c.long_name, c.short_name]).filter(Boolean).join(' ');
+    const areaOk = Math.max(0, ...areaWords.map((w) => nameScore([w], names))) >= 0.6;
+    if (areaOk || postalClose) return true;
+    return !pq.postal && !names; // χωρίς στοιχεία για σύγκριση: το δεχόμαστε
+  }
+
+  const api = { norm, parseQuery, scoreFeature, pickBest, distKm, googleMatches };
   global.RootingGeo = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

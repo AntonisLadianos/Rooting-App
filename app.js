@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '12';
+  const APP_VERSION = '13';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // ---------- Κατάσταση ----------
@@ -199,9 +199,9 @@
   }
 
   // Επιστρέφει {label, lat, lng, exact} ή null. exact = βρέθηκε ακριβώς ο αριθμός/κτίριο.
-  async function googleGeocode(q, near) {
+  async function googleGeocode(q, near, postalCode) {
     const geocoder = await loadGoogle();
-    const req = { address: q, region: 'gr', componentRestrictions: { country: 'GR' } };
+    const req = { address: q, region: 'gr', componentRestrictions: postalCode ? { country: 'GR', postalCode } : { country: 'GR' } };
     if (near) req.bounds = { south: near.lat - 0.3, west: near.lng - 0.4, north: near.lat + 0.3, east: near.lng + 0.4 };
     countGoogle();
     let resp;
@@ -221,7 +221,7 @@
       label: r.formatted_address.replace(/,\s*(Ελλάδα|Greece)$/i, ''),
       lat: typeof loc.lat === 'function' ? loc.lat() : loc.lat,
       lng: typeof loc.lng === 'function' ? loc.lng() : loc.lng,
-      exact, query: q, google: true
+      exact, query: q, google: true, comps: r.address_components
     };
   }
 
@@ -230,9 +230,15 @@
     // Με κλειδί Google: πρώτα Google (1 αίτημα), και μόνο αν δεν βρει, τα δωρεάν
     if (googleEnabled()) {
       try {
-        const g = await googleGeocode(q, region || searchBias());
-        // δεχόμαστε αποτέλεσμα που είναι τουλάχιστον σε επίπεδο δρόμου
-        if (g && (!region || RootingGeo.distKm(region, g) < 50)) return g;
+        const ok = (g) => g && RootingGeo.googleMatches(q, g.comps) && (!region || RootingGeo.distKm(region, g) < 50);
+        let g = await googleGeocode(q, region || searchBias());
+        if (ok(g)) return g;
+        // λάθος περιοχή (π.χ. ίδια οδός σε άλλη πόλη): ξαναρωτάμε με υποχρεωτικό ΤΚ
+        const postal = RootingGeo.parseQuery(q).postal;
+        if (g && postal) {
+          g = await googleGeocode(q, region || searchBias(), postal);
+          if (ok(g)) return g;
+        }
       } catch (e) { /* συνεχίζουμε με τα δωρεάν */ }
     }
     const noPostal = q.replace(/(^|\D)\d{3}\s?\d{2}(?!\d)/g, '$1').replace(/\s+,/g, ',').replace(/[,\s]+$/, '').trim();
@@ -306,7 +312,7 @@
         if (googleEnabled() && /\d/.test(q) && q.length >= 6) {
           try {
             const g = await googleGeocode(q, searchBias());
-            if (g) res = [Object.assign(g, { label: '📍 ' + g.label })].concat(res.slice(0, 4));
+            if (g && RootingGeo.googleMatches(q, g.comps)) res = [Object.assign(g, { label: '📍 ' + g.label })].concat(res.slice(0, 4));
           } catch (e) { /* μόνο τα δωρεάν */ }
         }
         if (seq !== searchSeq) return;
