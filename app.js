@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '20';
+  const APP_VERSION = '21';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // ---------- Κατάσταση ----------
@@ -514,6 +514,8 @@
       $('btnFullRoute').onclick = () => startBatch();
       $('btnReopt').textContent = done ? '⚡ Από εδώ' : '⚡ Νέα σειρά';
       renderBatchBar(list);
+      $('undoLast').innerHTML = undoLastHtml('undo-last');
+      bindUndoLast($('undoLast'));
     } else card.classList.add('hidden');
     document.body.classList.toggle('has-route', !!nextStop);
     if (typeof sheetState !== 'undefined' && sheetState === 'peek') requestAnimationFrame(() => setSheet('peek'));
@@ -614,6 +616,7 @@
     if (undoable) offerUndo(val ? `✓ Παραδόθηκε: ${title(s).split(',')[0]}` : 'Η στάση επανήλθε στο δρομολόγιο');
     const wasFailed = !!s.failed;
     s.done = val; s.doneAt = val ? Date.now() : null; s.failed = false;
+    S.lastDone = val ? { id: s.id, at: Date.now(), failed: false } : null;
     save(); render();
     if (wasFailed && !val) scheduleLegs();
     if (val) {
@@ -630,6 +633,7 @@
     if (!s) return;
     offerUndo(`✗ Αποτυχία: ${title(s).split(',')[0]}`);
     s.done = true; s.failed = true; s.doneAt = Date.now();
+    S.lastDone = { id: s.id, at: Date.now(), failed: true };
     save(); render();
     scheduleLegs();
     const next = orderedStops().find((x) => !x.done);
@@ -898,11 +902,19 @@
     const res = new Array(entries.length).fill(null);
     let netErr = 0;
     const pause = () => new Promise((r) => setTimeout(r, photonTrouble > 0 ? 1500 : 350));
-    for (let i = 0; i < entries.length; i++) {
-      progress(`Εντοπισμός ${i + 1}/${entries.length}…`);
-      try { res[i] = await geocodeSmart(entries[i].addr); } catch (e) { res[i] = null; entries[i].err = true; }
-      await pause();
-    }
+    // Με Google: 5 αναζητήσεις ταυτόχρονα χωρίς παύση. Χωρίς Google: μία-μία (η δωρεάν υπηρεσία μπλοκάρει)
+    const par = googleEnabled() ? 5 : 1;
+    let next = 0, doneN = 0;
+    const lane = async () => {
+      while (next < entries.length) {
+        const i = next++;
+        try { res[i] = await geocodeSmart(entries[i].addr); } catch (e) { res[i] = null; entries[i].err = true; }
+        doneN++; progress(`Εντοπισμός ${doneN}/${entries.length}…`);
+        if (par === 1) await pause();
+      }
+    };
+    progress(`Εντοπισμός 0/${entries.length}…`);
+    await Promise.all(Array.from({ length: Math.min(par, entries.length) }, lane));
     const pts = res.filter(Boolean).concat(S.stops.filter((s) => !s.done));
     if (pts.length >= 2) {
       const center = { lat: median(pts.map((p) => p.lat)), lng: median(pts.map((p) => p.lng)) };
@@ -972,16 +984,24 @@
     if (!files.length) return;
     const found = [], perImage = [], allAmbig = [];
     try {
-      for (let i = 0; i < files.length; i++) {
-        const label = files.length > 1 ? `Διαβάζω εικόνα ${i + 1}/${files.length}` : 'Διαβάζω την εικόνα';
-        busy(true, label + '…');
-        const { text, ambig } = await RootingOCR.recognize(files[i], (m) => {
-          if (m.status === 'recognizing text') busy(true, `${label}… ${Math.round((m.progress || 0) * 100)}%`);
-          else if (/loading|initializ/.test(m.status)) busy(true, 'Προετοιμασία αναγνώρισης κειμένου…\n(μόνο την πρώτη φορά αργεί)');
-        });
-        perImage.push(RootingOCR.extractImage(text));
-        allAmbig.push(...ambig);
-      }
+      // 2 screenshots ταυτόχρονα (όταν είναι 3+), η σειρά διατηρείται για την ένωση κομμένων καρτελών
+      const results = new Array(files.length);
+      let nextIdx = 0, doneN = 0;
+      const lanes = files.length >= 3 ? 2 : 1;
+      busy(true, files.length > 1 ? `Διαβάζω ${files.length} εικόνες…` : 'Διαβάζω την εικόνα…');
+      const lane = async (slot) => {
+        while (nextIdx < files.length) {
+          const i = nextIdx++;
+          results[i] = await RootingOCR.recognize(files[i], (m) => {
+            if (/loading|initializ/.test(m.status) && !doneN) busy(true, 'Προετοιμασία αναγνώρισης κειμένου…\n(μόνο την πρώτη φορά αργεί)');
+            else if (files.length === 1 && m.status === 'recognizing text') busy(true, `Διαβάζω την εικόνα… ${Math.round((m.progress || 0) * 100)}%`);
+          }, slot);
+          doneN++;
+          if (files.length > 1) busy(true, `Διαβάζω εικόνες… ${doneN}/${files.length}`);
+        }
+      };
+      await Promise.all(Array.from({ length: lanes }, (_, k) => lane(k)));
+      results.forEach(({ text, ambig }) => { perImage.push(RootingOCR.extractImage(text)); allAmbig.push(...ambig); });
     } catch (err) {
       console.error(err);
       busy(false);
@@ -1301,6 +1321,23 @@
   }
   function closeDrive() { driveOpen = false; $('drive').classList.add('hidden'); keepAwake(false); }
 
+  // «↶ Αναίρεση» της τελευταίας στάσης (μένει 15 λεπτά, ακόμα κι αφού γυρίσεις από το Google Maps)
+  function lastDoneStop() {
+    const l = S.lastDone;
+    if (!l || Date.now() - l.at > 15 * 60000) return null;
+    const s = S.stops.find((x) => x.id === l.id);
+    return s && s.done ? s : null;
+  }
+  function undoLastHtml(cls) {
+    const s = lastDoneStop();
+    return s ? `<button class="btn ${cls}" data-undo-last>↶ Αναίρεση: ${esc(title(s).split(',')[0])} <small>(${s.failed ? '✗ αποτυχία' : '✓ παραδόθηκε'})</small></button>` : '';
+  }
+  function bindUndoLast(root) {
+    root.querySelectorAll('[data-undo-last]').forEach((b) => {
+      b.onclick = () => { const s = lastDoneStop(); if (!s) return; S.lastDone = null; markDone(s.id, false); toast('Η στάση επανήλθε ως επόμενη'); };
+    });
+  }
+
   function renderDrive() {
     const list = orderedStops();
     const next = list.find((s) => !s.done);
@@ -1316,6 +1353,7 @@
     const eta = etas[next.id];
     const n = nextChunk().length;
     $('dBody').innerHTML = `
+      ${undoLastHtml('d-undo')}
       <div class="d-label">Στάση ${idx + 1} από ${list.length}${eta ? ' · άφιξη ~' + fmtClock(eta.at) : ''}</div>
       <div class="d-title">${esc(title(next))}</div>
       ${next.note ? `<div class="d-note">📝 ${esc(next.note)}</div>` : ''}
@@ -1331,6 +1369,7 @@
     $('dFull').onclick = () => { const u = googleFullRouteUrl(); startBatch(); openUrl(u); };
     $('dDoneOnly').onclick = () => markDone(next.id, true, true);
     $('dFail').onclick = () => markFailed(next.id);
+    bindUndoLast($('dBody'));
     $('dDoneGo').onclick = () => {
       markDone(next.id, true);
       const nn = orderedStops().find((s) => !s.done);

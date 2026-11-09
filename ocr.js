@@ -16,9 +16,13 @@
     });
   }
 
-  async function getWorker(onProgress) {
+  // Μέχρι 2 «αναγνώστες» ταυτόχρονα (slot 0/1) για να διαβάζονται 2 screenshots μαζί
+  const workerPs = [];
+  async function getWorker(onProgress, slot) {
+    slot = slot || 0;
+    let workerP = workerPs[slot];
     if (!workerP) {
-      workerP = (async () => {
+      workerP = workerPs[slot] = (async () => {
         if (!global.Tesseract) await loadScript(BASE + 'tesseract.min.js');
         return global.Tesseract.createWorker(['ell', 'eng'], 1, {
           workerPath: BASE + 'worker.min.js',
@@ -27,7 +31,7 @@
           logger: (m) => { if (onProgress && m && m.status) onProgress(m); }
         });
       })();
-      workerP.catch(() => { workerP = null; });
+      workerP.catch(() => { workerPs[slot] = null; });
     }
     return workerP;
   }
@@ -58,8 +62,8 @@
   }
 
   // Επιστρέφει { text, ambig: [{ read: '208', alt: '20B' }] }
-  async function recognize(file, onProgress) {
-    const w = await getWorker(onProgress);
+  async function recognize(file, onProgress, slot) {
+    const w = await getWorker(onProgress, slot);
     const r = await w.recognize(file, {}, { text: true, blocks: true });
     const text = (r.data && r.data.text) || '';
     const ambig = [];
