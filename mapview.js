@@ -51,7 +51,8 @@
       tiltInteractionEnabled: true,    // κλίση 3D
       isFractionalZoomEnabled: true
     });
-    let markers = [], line = null, me = null, info = null, traffic = null, navLine = null;
+    let markers = [], line = null, me = null, info = null, traffic = null, navLine = null, navCase = null, dim = false;
+    const routeStyle = () => (dim ? { strokeColor: '#9ca3af', strokeOpacity: 0.55, strokeWeight: 4 } : { strokeColor: '#2563eb', strokeOpacity: 0.85, strokeWeight: 6 });
 
     const view = {
       kind: 'google', canRotate: true, canTraffic: true, canSatellite: true, raw: map,
@@ -60,7 +61,12 @@
       unfollow() { map.moveCamera({ heading: 0, tilt: 0, zoom: 14 }); },
       setNavRoute(coords) {
         if (navLine) { navLine.setMap(null); navLine = null; }
-        if (coords && coords.length) navLine = new Polyline({ path: coords.map((c) => ({ lat: c[0], lng: c[1] })), map, strokeColor: '#1d4ed8', strokeOpacity: 0.95, strokeWeight: 9, zIndex: 5 });
+        if (navCase) { navCase.setMap(null); navCase = null; }
+        if (!coords || !coords.length) return;
+        const path = coords.map((c) => ({ lat: c[0], lng: c[1] }));
+        // διαδρομή πλοήγησης: έντονο μπλε με λευκό περίγραμμα, πάνω από όλα
+        navCase = new Polyline({ path, map, strokeColor: '#ffffff', strokeOpacity: 1, strokeWeight: 14, zIndex: 50 });
+        navLine = new Polyline({ path, map, strokeColor: '#0a66ff', strokeOpacity: 1, strokeWeight: 8, zIndex: 51 });
       },
       setView(lat, lng, zoom) { map.moveCamera({ center: { lat, lng }, zoom: zoom || map.getZoom() }); },
       panTo(lat, lng) { map.panTo({ lat, lng }); },
@@ -91,8 +97,9 @@
         line = new Polyline(dashed ? {
           path, map, strokeOpacity: 0,
           icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 0.9, strokeColor: '#2563eb', scale: 3 }, offset: '0', repeat: '14px' }]
-        } : { path, map, strokeColor: '#2563eb', strokeOpacity: 0.85, strokeWeight: 6 });
+        } : Object.assign({ path, map }, routeStyle()));
       },
+      dimRoute(on) { dim = !!on; if (line && line.get('strokeOpacity') !== 0) line.setOptions(routeStyle()); },
       setMe(pos) {
         if (!pos) { if (me) me.map = null; me = null; return; }
         if (!me) me = new AdvancedMarkerElement({ map, position: pos, content: meEl(), zIndex: 999 });
@@ -155,8 +162,9 @@
       },
       setRoute(coords, dashed) {
         if (line) { map.removeLayer(line); line = null; }
-        if (coords && coords.length) line = L.polyline(coords, { color: '#2563eb', weight: 5, opacity: 0.8, dashArray: dashed ? '8 8' : null }).addTo(map);
+        if (coords && coords.length) line = L.polyline(coords, Object.assign({ dashArray: dashed ? '8 8' : null }, this._dim ? { color: '#9ca3af', weight: 4, opacity: 0.55 } : { color: '#2563eb', weight: 5, opacity: 0.8 })).addTo(map);
       },
+      dimRoute(on) { this._dim = !!on; if (line) line.setStyle(on ? { color: '#9ca3af', weight: 4, opacity: 0.55 } : { color: '#2563eb', weight: 5, opacity: 0.8 }); },
       setMe(pos) {
         if (!pos) { if (me) map.removeLayer(me); me = null; return; }
         if (!me) me = L.circleMarker([pos.lat, pos.lng], { radius: 8, color: '#fff', weight: 3, fillColor: '#2563eb', fillOpacity: 1 }).addTo(map);
@@ -169,7 +177,11 @@
       unfollow() { map.setZoom(14); },
       setNavRoute(coords) {
         if (this._nav) { map.removeLayer(this._nav); this._nav = null; }
-        if (coords && coords.length) this._nav = L.polyline(coords, { color: '#1d4ed8', weight: 8, opacity: 0.95 }).addTo(map);
+        if (this._navCase) { map.removeLayer(this._navCase); this._navCase = null; }
+        if (coords && coords.length) {
+          this._navCase = L.polyline(coords, { color: '#ffffff', weight: 13, opacity: 1 }).addTo(map);
+          this._nav = L.polyline(coords, { color: '#0a66ff', weight: 7, opacity: 1 }).addTo(map);
+        }
       },
       onLongPress(cb) { map.on('contextmenu', (e) => cb(e.latlng.lat, e.latlng.lng)); }
     };

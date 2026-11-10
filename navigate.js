@@ -161,6 +161,7 @@
     });
     muted = !!opts.muted;
     document.body.classList.add('navigating');
+    if (opts.mv && opts.mv.dimRoute) opts.mv.dimRoute(true); // η γραμμή όλου του δρομολογίου γίνεται αχνή
     el('nav').classList.remove('hidden');
     el('navArrive').classList.add('hidden');
     el('navText').textContent = 'Υπολογισμός διαδρομής…';
@@ -272,7 +273,7 @@
     try { if (cur.watch != null) navigator.geolocation.clearWatch(cur.watch); } catch (e) { /* ignore */ }
     try { if (cur.wake) cur.wake.release(); } catch (e) { /* ignore */ }
     try { if (global.speechSynthesis) speechSynthesis.cancel(); } catch (e) { /* ignore */ }
-    if (cur.mv) { cur.mv.setNavRoute(null); cur.mv.unfollow(); }
+    if (cur.mv) { cur.mv.setNavRoute(null); cur.mv.unfollow(); if (cur.mv.dimRoute) cur.mv.dimRoute(false); }
     const onExit = cur.onExit;
     cur = null;
     document.body.classList.remove('navigating');

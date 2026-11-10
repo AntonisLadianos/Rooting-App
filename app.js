@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '26';
+  const APP_VERSION = '27';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // ---------- Κατάσταση ----------
@@ -614,12 +614,34 @@
     else { const u = navUrl(s); a.href = u; if (u.startsWith('http')) a.target = '_blank'; else a.removeAttribute('target'); a.onclick = null; }
   }
   let navStop = null;
+  // τηλέφωνα της στάσης (όλοι οι πελάτες, χωρίς διπλά)
+  function stopPhones(s) {
+    const list = [];
+    (s.people || []).forEach((p) => { if (p.phone && !list.some((x) => x.phone === p.phone)) list.push({ name: p.name || '', phone: p.phone }); });
+    if (s.phone && !list.some((x) => x.phone === s.phone)) list.unshift({ name: whoText(s) || s.note || '', phone: s.phone });
+    return list;
+  }
+  function setupNavCall(s) {
+    const b = $('navCallBar'), phones = stopPhones(s);
+    b.classList.toggle('hidden', !phones.length);
+    document.querySelector('.nav-btns').classList.toggle('with-call', phones.length > 0);
+    if (phones.length === 1) { b.href = 'tel:' + phones[0].phone.replace(/\s/g, ''); b.onclick = null; }
+    else if (phones.length > 1) {
+      b.removeAttribute('href');
+      b.onclick = (e) => {
+        e.preventDefault();
+        openModal('Κλήση', `<ul class="people">${phones.map((p) => `<li><span>${ic('user')} ${esc(p.name || '—')}</span><a class="btn btn-primary" href="tel:${esc(p.phone.replace(/\s/g, ''))}">${ic('phone')} ${esc(p.phone)}</a></li>`).join('')}</ul>`);
+      };
+    }
+  }
+
   function startInAppNav(s) {
     if (driveOpen) closeDrive();
     closeModal();
     navStop = s;
     $('navArrive').classList.add('hidden');
     renderNavUndo();
+    setupNavCall(s);
     RootingNav.start({
       dest: { lat: s.lat, lng: s.lng, title: title(s) },
       from: myPos, mv, osrm: OSRM, muted: !!S.settings.navMuted,
@@ -632,9 +654,10 @@
   function showArrive(s) {
     $('navArriveTitle').textContent = title(s);
     $('navArriveNote').innerHTML = [s.pkgs ? `<b class="pkg-badge${s.pkgs > 1 ? ' multi' : ''}">${ic('package')} ${pkgsText(s.pkgs)}</b>` : '', whoText(s) ? ic('user') + ' ' + esc(whoText(s)) : '', s.note ? ic('note') + ' ' + esc(s.note) : ''].filter(Boolean).join('<br>');
-    const call = $('navCall');
-    call.classList.toggle('hidden', !s.phone);
-    if (s.phone) call.href = 'tel:' + s.phone.replace(/\s/g, '');
+    const call = $('navCall'), phones = stopPhones(s);
+    call.classList.toggle('hidden', !phones.length);
+    if (phones.length === 1) { call.href = 'tel:' + phones[0].phone.replace(/\s/g, ''); call.onclick = null; }
+    else if (phones.length > 1) { call.removeAttribute('href'); call.onclick = (e) => { e.preventDefault(); $('navCallBar').click(); }; }
     $('navArrive').classList.remove('hidden');
   }
   function navFinishStop(failed) {

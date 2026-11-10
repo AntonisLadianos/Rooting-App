@@ -411,3 +411,8 @@ body.navigating #map { bottom: calc(132px + var(--safe-bottom)) !important; }
 .people .ic { width: 15px; height: 15px; vertical-align: -2px; }
 .d-note .ic { width: 18px; height: 18px; vertical-align: -3px; }
 .found-body small .ic { width: 13px; height: 13px; vertical-align: -2px; }
+
+/* ---- κλήση μέσα στην πλοήγηση ---- */
+.nav-btns.with-call { grid-template-columns: 1fr 64px 64px 64px; }
+.nav-call { color: var(--success); text-decoration: none; }
+body.navigating .modal { z-index: 1100; }
