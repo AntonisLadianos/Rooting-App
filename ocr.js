@@ -291,7 +291,10 @@
       let nameLine = lines[1] && looksLikeName(lines[1]) ? lines[1] : '';
       let addrStart = nameLine ? 2 : 1;
       // όνομα σε δύο γραμμές («Σταυρουλα Καναβακη» / «Τζώρτζογλου»)
-      if (nameLine && lines[2] && /^\p{L}{3,}$/u.test(lines[2]) && !isNoise(lines[2])) { nameLine += ' ' + lines[2]; addrStart = 3; }
+      // («ΝΑΤΑΛΙΑ ΒΑΧΑΜΠΟΒΑ» / «ΜΠΙΤΣΑΚΑΚΗΣ ΒΑΓΓΕΛΗΣ»): 2η γραμμή χωρίς αριθμούς/κόμμα, και μετά ακολουθεί διεύθυνση
+      const after = lines[3];
+      if (nameLine && lines[2] && !/[\d,]/.test(lines[2]) && !isNoise(lines[2]) && /^\p{L}{3,}(\s+\p{L}{2,}){0,2}$/u.test(lines[2]) &&
+        after && !isPhoneLine(after) && !isCardEnd(after)) { nameLine += ' ' + lines[2]; addrStart = 3; }
       const phoneLine = lines.find(isPhoneLine);
       // Διεύθυνση = ΟΛΕΣ οι γραμμές ανάμεσα στο όνομα και στο τηλέφωνο (ή στο τέλος της καρτέλας)
       const addrLines = [];
@@ -351,7 +354,7 @@
           // συνέχεια κομμένης καρτέλας με ολόκληρη τη διεύθυνση, ή καρτέλα που της κόπηκε η αρχή
           if (lastOpen && RootingKey(p.address).startsWith(RootingKey(lastOpen.address.split(',')[0]))) {
             lastOpen.address = p.address; lastOpen.phone = lastOpen.phone || p.phone;
-          } else out.push(Object.assign({ img: imgNo }, p));
+          } else out.push(Object.assign({ img: imgNo, codes: img.preCodes || [], pkgs: img.prePkgs || 0 }, p));
         } else if (lastOpen) {
           lastOpen.address = tidyAddress(lastOpen.address.replace(/[,\s]+$/, '') + ', ' + p.address);
           lastOpen.phone = lastOpen.phone || p.phone;
@@ -380,6 +383,20 @@
   //  • ίδια καρτέλα σε δύο διαδοχικά screenshots (επικάλυψη) -> μετράει μία φορά
   //  • δύο καρτέλες στο ΙΔΙΟ screenshot -> πάντα διαφορετικά δέματα
   function groupCards(items) {
+    // ίδιος κωδικός αποστολής σε διαφορετικά screenshots = η ίδια καρτέλα (κρατάμε την πιο «καθαρή» ανάγνωση)
+    const better = (a, b) => (/\d/.test(String(b.address).split(',')[0]) && !/\d/.test(String(a.address).split(',')[0])) ? b : a;
+    const uniq = [];
+    items.forEach((it) => {
+      const c = it.codes || [];
+      const same = c.length ? uniq.find((u) => u.img !== it.img && (u.codes || []).length && codesOverlap(u.codes, c)) : null;
+      if (!same) { uniq.push(Object.assign({}, it)); return; }
+      const keep = better(same, it) === it ? Object.assign(same, { address: it.address }) : same;
+      if ((it.name || '').length > (keep.name || '').length && nameKey(it.name).includes(nameKey(keep.name).slice(0, 6))) keep.name = it.name;
+      keep.phone = keep.phone || it.phone;
+      keep.pkgs = Math.max(keep.pkgs || 0, it.pkgs || 0);
+      keep.codes = keep.codes.concat(c.filter((x) => !keep.codes.some((y) => sameCode(x, y))));
+    });
+    items = uniq;
     const groups = [];
     items.forEach((it) => {
       const k = addrKey(it.address);
