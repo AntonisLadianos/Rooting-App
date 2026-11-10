@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '30';
+  const APP_VERSION = '31';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // ---------- Κατάσταση ----------
@@ -419,6 +419,26 @@
     save(); render();
   }
 
+  // Τι απομένει σε όλο το δρομολόγιο: στάσεις, χρόνος (οδήγηση + χρόνος ανά στάση), χλμ
+  function remainingStats() {
+    const list = orderedStops();
+    const pending = list.filter((x) => !x.done);
+    let sec = 0, m = 0;
+    list.forEach((x, k) => { if (!x.done && S.route && S.route.legs && S.route.legs[k]) { sec += S.route.legs[k].duration + (S.settings.serviceMin || 0) * 60; m += S.route.legs[k].distance; } });
+    return { list, pending, sec, m, hasLegs: !!(S.route && S.route.legs), failed: list.filter((x) => x.failed).length };
+  }
+  // Γραμμή προόδου στην πλοήγηση
+  function updateNavProgress() {
+    if (!S.route) return;
+    const r = remainingStats(), total = r.list.length, handled = total - r.pending.length;
+    const curIdx = navStop ? r.list.findIndex((x) => x.id === navStop.id) + 1 : handled + 1;
+    $('navProgCount').textContent = `Στάση ${Math.min(curIdx || handled + 1, total)}/${total}`;
+    $('navProgRest').innerHTML = ` · μένουν ${r.pending.length}` + (r.hasLegs ? ` · τέλος ~${fmtClock(Date.now() + r.sec * 1000)}` : '') +
+      (r.failed ? ` · <span class="fail-txt">${ic('x')} ${r.failed}</span>` : '');
+    $('navProgBar').style.width = Math.round((handled / Math.max(1, total)) * 100) + '%';
+  }
+  setInterval(() => { if (window.RootingNav && RootingNav.active()) updateNavProgress(); }, 30000);
+
   function computeEtas(list) {
     const etas = {};
     if (!S.route || !S.route.legs) return etas;
@@ -495,9 +515,7 @@
       const idx = list.indexOf(nextStop);
       $('nextIdx').textContent = `${idx + 1}/${list.length}`;
       // πρόοδος + τι απομένει
-      const pending = list.filter((x) => !x.done);
-      let remSec = 0, remM = 0;
-      list.forEach((x, k) => { if (!x.done && S.route.legs && S.route.legs[k]) { remSec += S.route.legs[k].duration + (S.settings.serviceMin || 0) * 60; remM += S.route.legs[k].distance; } });
+      const { pending, sec: remSec } = remainingStats();
       $('nextRemain').textContent = `μένουν ${pending.length}` + (S.route.legs ? ` · ~${fmtDur(remSec)} · τέλος ~${fmtClock(Date.now() + remSec * 1000)}` : ' · υπολογισμός…');
       $('nextProgress').style.width = Math.round((done / list.length) * 100) + '%';
       const call = $('btnCallNext');
@@ -524,6 +542,7 @@
       bindUndoLast($('undoLast'));
     } else card.classList.add('hidden');
     document.body.classList.toggle('has-route', !!nextStop);
+    if (window.RootingNav && RootingNav.active()) updateNavProgress();
     if (typeof sheetState !== 'undefined' && sheetState === 'peek') requestAnimationFrame(() => setSheet('peek'));
     if (driveOpen) renderDrive();
 
@@ -643,6 +662,7 @@
     document.querySelector('.nav-btns').classList.remove('arrived');
     renderNavUndo();
     setupNavCall(s);
+    updateNavProgress();
     // πελάτης(ες) και δέματα κάτω από τη διεύθυνση
     const who = (s.people || []).map((p) => p.name).filter(Boolean).join(' · ') || s.note || '';
     $('navWho').innerHTML = [who ? `<span class="who">${ic('user')} ${esc(who)}</span>` : '', s.pkgs ? `<b class="pkg-badge${s.pkgs > 1 ? ' multi' : ''}">${ic('package')} ${pkgsText(s.pkgs)}</b>` : ''].filter(Boolean).join('');

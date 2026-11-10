@@ -471,3 +471,11 @@ body.navigating .modal { z-index: 1100; }
 /* ---- Άφιξη: το ✓ γίνεται πράσινο και πάλλεται ---- */
 .nav-btns.arrived .nav-ok { background: var(--success); color: #fff; border-color: var(--success); animation: okpulse 1.4s ease-in-out infinite; }
 @keyframes okpulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(22,163,74,.55); } 50% { box-shadow: 0 0 0 9px rgba(22,163,74,0); } }
+
+/* ---- Πρόοδος ημέρας μέσα στην πλοήγηση ---- */
+.nav-prog { margin: -2px 0 10px; }
+.nav-prog-txt { font-size: 13.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nav-prog-txt b { color: var(--text); }
+.nav-prog-txt .ic { width: 13px; height: 13px; vertical-align: -2px; }
+.nav-prog .progress { height: 6px; margin: 5px 0 0; }
+@media (orientation: landscape) and (max-height: 560px) { .nav-prog { margin-bottom: 6px; } }
