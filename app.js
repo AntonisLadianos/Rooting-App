@@ -6,8 +6,21 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '32';
+  const APP_VERSION = '33';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
+
+  // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
+  // Τότε η γραμμή του iPhone δεν πέφτει πάνω μας, άρα δεν χρειάζεται επιπλέον κενό από κάτω.
+  function fixViewport() {
+    const standalone = navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+    const portrait = innerHeight > innerWidth;
+    const screenLong = Math.max(screen.width, screen.height);
+    const short = standalone && portrait && screenLong - innerHeight > 20;
+    document.documentElement.style.setProperty('--safe-bottom', short ? '0px' : 'env(safe-area-inset-bottom, 0px)');
+  }
+  fixViewport();
+  window.addEventListener('resize', fixViewport);
+  window.addEventListener('orientationchange', () => setTimeout(fixViewport, 300));
 
   // ---------- Κατάσταση ----------
   const defaults = {

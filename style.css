@@ -482,7 +482,3 @@ body.navigating .modal { z-index: 1100; }
 
 /* ---- Κάτω μπάρα πλοήγησης: κουμπιά πιο κάτω, χωρίς άδειο κενό ---- */
 .nav-bottom { padding-bottom: max(8px, calc(var(--safe-bottom) - 14px)); }
-/* στην εφαρμογή της αρχικής οθόνης το iOS μερικές φορές δίνει πιο κοντή οθόνη απ' ό,τι είναι: γεμίζουμε όλο το ύψος */
-@media (display-mode: standalone) {
-  .nav { bottom: auto; height: 100lvh; }
-}
