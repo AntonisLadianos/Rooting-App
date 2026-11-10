@@ -416,3 +416,30 @@ body.navigating #map { bottom: calc(132px + var(--safe-bottom)) !important; }
 .nav-btns.with-call { grid-template-columns: 1fr 64px 64px 64px; }
 .nav-call { color: var(--success); text-decoration: none; }
 body.navigating .modal { z-index: 1100; }
+
+/* ---- Κουμπιά επόμενης στάσης: πάντα μέσα στην κάρτα ---- */
+.next-actions { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important; gap: 8px; }
+.next-actions .btn { min-width: 0; padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: clamp(14px, 4.2vw, 17px); }
+.sheet-body { overflow-x: hidden; }
+.card, .next-card { max-width: 100%; min-width: 0; }
+.chips { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.chip { min-width: 0; overflow: hidden; }
+@media (orientation: landscape) and (max-height: 560px) {
+  .next-actions .btn { font-size: 15px; min-height: 46px; }
+  .next-title { font-size: 17px; }
+}
+.list-head { flex-wrap: wrap; row-gap: 4px; min-width: 0; }
+.list-head .list-clear { margin-left: auto; }
+
+/* 📞 δίπλα στη διεύθυνση (στρογγυλό), ώστε τα 2 μεγάλα κουμπιά να έχουν όλο το πλάτος */
+.next-title-row { display: flex; align-items: flex-start; gap: 10px; }
+.next-title-row .next-title { flex: 1; min-width: 0; }
+.next-title-row .call-btn { flex: none; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center;
+  background: rgba(22,163,74,.12); color: var(--success); border: 1px solid rgba(22,163,74,.35); margin-top: 2px; text-decoration: none; }
+.next-title-row .call-btn.hidden { display: none; }
+.next-title-row .call-btn .ic { width: 22px; height: 22px; }
+.next-card { container-type: inline-size; }
+.next-actions .btn { font-size: clamp(13px, 5cqi, 17px); }
+@container (max-width: 250px) { .next-actions .btn .ic { display: none; } }
+.chips .chip { font-size: clamp(10.5px, 3.8cqi, 12.5px); padding: 6px 2px; }
+@container (max-width: 250px) { .chips { gap: 4px; } .chips .chip .ic { width: 17px; height: 17px; } }
