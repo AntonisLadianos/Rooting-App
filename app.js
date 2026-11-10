@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '31';
+  const APP_VERSION = '32';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // ---------- Κατάσταση ----------

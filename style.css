@@ -479,3 +479,10 @@ body.navigating .modal { z-index: 1100; }
 .nav-prog-txt .ic { width: 13px; height: 13px; vertical-align: -2px; }
 .nav-prog .progress { height: 6px; margin: 5px 0 0; }
 @media (orientation: landscape) and (max-height: 560px) { .nav-prog { margin-bottom: 6px; } }
+
+/* ---- Κάτω μπάρα πλοήγησης: κουμπιά πιο κάτω, χωρίς άδειο κενό ---- */
+.nav-bottom { padding-bottom: max(8px, calc(var(--safe-bottom) - 14px)); }
+/* στην εφαρμογή της αρχικής οθόνης το iOS μερικές φορές δίνει πιο κοντή οθόνη απ' ό,τι είναι: γεμίζουμε όλο το ύψος */
+@media (display-mode: standalone) {
+  .nav { bottom: auto; height: 100lvh; }
+}
