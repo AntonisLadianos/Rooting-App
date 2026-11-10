@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '29';
+  const APP_VERSION = '30';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // ---------- Κατάσταση ----------
@@ -640,6 +640,7 @@
     closeModal();
     navStop = s;
     $('navArrive').classList.add('hidden');
+    document.querySelector('.nav-btns').classList.remove('arrived');
     renderNavUndo();
     setupNavCall(s);
     // πελάτης(ες) και δέματα κάτω από τη διεύθυνση
@@ -654,14 +655,10 @@
       onExit: () => { navStop = null; render(); setSheet('peek'); setTimeout(fitAll, 300); }
     });
   }
-  function showArrive(s) {
-    $('navArriveTitle').textContent = title(s);
-    $('navArriveNote').innerHTML = [s.pkgs ? `<b class="pkg-badge${s.pkgs > 1 ? ' multi' : ''}">${ic('package')} ${pkgsText(s.pkgs)}</b>` : '', whoText(s) ? ic('user') + ' ' + esc(whoText(s)) : '', s.note ? ic('note') + ' ' + esc(s.note) : ''].filter(Boolean).join('<br>');
-    const call = $('navCall'), phones = stopPhones(s);
-    call.classList.toggle('hidden', !phones.length);
-    if (phones.length === 1) { call.href = 'tel:' + phones[0].phone.replace(/\s/g, ''); call.onclick = null; }
-    else if (phones.length > 1) { call.removeAttribute('href'); call.onclick = (e) => { e.preventDefault(); $('navCallBar').click(); }; }
-    $('navArrive').classList.remove('hidden');
+  // Άφιξη: χωρίς αναδυόμενο παράθυρο (κρύβει τον χάρτη). Το ✓ της κάτω μπάρας γίνεται πράσινο
+  // και πάλλεται, και από εδώ και πέρα δεν ζητάει επιβεβαίωση.
+  function showArrive() {
+    document.querySelector('.nav-btns').classList.add('arrived');
   }
   function navFinishStop(failed) {
     const s = navStop;
@@ -681,7 +678,10 @@
   $('navMute').onclick = () => { S.settings.navMuted = RootingNav.toggleMute(); save(); };
   $('navDone').onclick = () => navFinishStop(false);
   $('navFail').onclick = () => navFinishStop(true);
-  $('navDoneMan').onclick = () => { if (navStop && confirm(`Παραδόθηκε: ${title(navStop).split(',')[0]};`)) navFinishStop(false); };
+  $('navDoneMan').onclick = () => {
+    if (!navStop) return;
+    if (RootingNav.arrived() || confirm(`Παραδόθηκε: ${title(navStop).split(',')[0]};`)) navFinishStop(false);
+  };
   $('navFailMan').onclick = () => { if (navStop && confirm(`Αποτυχία παράδοσης: ${title(navStop).split(',')[0]};`)) navFinishStop(true); };
 
   // Όλη η υπόλοιπη διαδρομή στο Google Maps (έως 10 στάσεις: 9 ενδιάμεσες + προορισμός)
