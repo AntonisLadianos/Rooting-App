@@ -36,14 +36,14 @@
   }
 
   // ---------------- Google ----------------
-  async function createGoogle(el, center, mapId) {
+  async function createGoogle(el, center, mapId, scheme) {
     const { Map, InfoWindow, Polyline, TrafficLayer, RenderingType } = await google.maps.importLibrary('maps');
     const { AdvancedMarkerElement } = await google.maps.importLibrary('marker');
     const map = new Map(el, {
       center, zoom: 12,
       mapId: mapId || 'DEMO_MAP_ID',
       renderingType: RenderingType ? RenderingType.VECTOR : 'VECTOR',
-      colorScheme: 'FOLLOW_SYSTEM',
+      colorScheme: scheme || 'FOLLOW_SYSTEM',
       disableDefaultUI: true,
       gestureHandling: 'greedy',      // ένα δάχτυλο = μετακίνηση, χωρίς «χρησιμοποιήστε δύο δάχτυλα»
       clickableIcons: false,
@@ -55,7 +55,7 @@
     const routeStyle = () => (dim ? { strokeColor: '#9ca3af', strokeOpacity: 0.55, strokeWeight: 4 } : { strokeColor: '#2563eb', strokeOpacity: 0.85, strokeWeight: 6 });
 
     const view = {
-      kind: 'google', canRotate: true, canTraffic: true, canSatellite: true, raw: map,
+      kind: 'google', scheme: scheme || 'FOLLOW_SYSTEM', canRotate: true, canTraffic: true, canSatellite: true, raw: map,
       setSatellite(on) { map.setMapTypeId(on ? 'hybrid' : 'roadmap'); },
       follow(p, heading) { map.moveCamera({ center: ahead(p, heading, 70), heading: heading || 0, tilt: 50, zoom: 17.5 }); },
       unfollow() { map.moveCamera({ heading: 0, tilt: 0, zoom: 14 }); },

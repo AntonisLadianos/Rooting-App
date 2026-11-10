@@ -22,11 +22,22 @@
 
     <!-- Κουμπιά πάνω στον χάρτη (πάνω δεξιά) -->
     <div class="map-ctrls">
-      <button id="btnSettings" class="map-fab" title="Ρυθμίσεις" aria-label="Ρυθμίσεις"><i data-ic="settings"></i></button>
+      <button id="btnMenu" class="map-fab" title="Μενού" aria-label="Μενού" aria-expanded="false"><i data-ic="menu"></i></button>
       <button id="btnLocate" class="map-fab" title="Η θέση μου" aria-label="Η θέση μου"><i data-ic="locate"></i></button>
-      <button id="btnTraffic" class="map-fab hidden" title="Κίνηση" aria-label="Κίνηση στους δρόμους"><i data-ic="traffic"></i></button>
-      <button id="btnSat" class="map-fab hidden" title="Δορυφόρος" aria-label="Δορυφορικός χάρτης"><i data-ic="layers"></i></button>
       <button id="btnNorth" class="map-fab hidden" title="Βορράς" aria-label="Επαναφορά προσανατολισμού"><i data-ic="compass"></i></button>
+      <div id="mapMenu" class="map-menu hidden" role="menu">
+        <button id="btnTraffic" class="mm-item hidden" role="menuitemcheckbox"><i data-ic="traffic"></i><span>Κίνηση</span><span class="mm-sw"></span></button>
+        <button id="btnSat" class="mm-item hidden" role="menuitemcheckbox"><i data-ic="layers"></i><span>Δορυφόρος</span><span class="mm-sw"></span></button>
+        <div class="mm-theme">
+          <div class="mm-label">Εμφάνιση</div>
+          <div class="mm-seg" id="themeSeg">
+            <button data-theme="auto"><i data-ic="contrast"></i> Αυτόματο</button>
+            <button data-theme="light"><i data-ic="sun"></i> Ανοιχτό</button>
+            <button data-theme="dark"><i data-ic="moon"></i> Σκούρο</button>
+          </div>
+        </div>
+        <button id="btnSettings" class="mm-item" role="menuitem"><i data-ic="settings"></i><span>Ρυθμίσεις</span><span class="chev">›</span></button>
+      </div>
     </div>
 
     <!-- Κάρτα που σέρνεται (κάτω / μέση / πάνω) -->

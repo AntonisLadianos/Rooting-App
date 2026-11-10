@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '33';
+  const APP_VERSION = '34';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -1661,7 +1661,7 @@
     if (useGoogleMap()) {
       try {
         await loadGoogleCore();
-        mv = await RootingMapView.createGoogle(el, center, S.settings.googleMapId);
+        mv = await RootingMapView.createGoogle(el, center, S.settings.googleMapId, googleScheme());
         S.settings.mapUsage = { month: monthKey(), count: mapUsage() + 1 }; save();
       } catch (e) { console.warn('Google map', e); mv = null; el.innerHTML = ''; }
     }
@@ -1671,6 +1671,7 @@
     $('btnSat').classList.toggle('hidden', !mv.canSatellite);
     if (mv.canSatellite && S.settings.satellite) { mv.setSatellite(true); $('btnSat').classList.add('on'); }
     if (mv.canRotate) mv.onRotate((rot) => $('btnNorth').classList.toggle('hidden', !rot));
+    applyTheme();
     showMe();
   }
   function onGoogleAuthFailure() {
@@ -1681,12 +1682,55 @@
       mv = RootingMapView.createLeaflet(el, DEFAULT_CENTER);
       mv.onLongPress(onMapLongPress);
       $('btnTraffic').classList.add('hidden'); $('btnNorth').classList.add('hidden'); $('btnSat').classList.add('hidden');
-      render(); fitAll(); showMe();
+      applyTheme(); render(); fitAll(); showMe();
     }
   }
   let trafficOn = false;
   $('btnTraffic').onclick = () => { trafficOn = !trafficOn; mv.setTraffic(trafficOn); $('btnTraffic').classList.toggle('on', trafficOn); };
   $('btnNorth').onclick = () => mv.resetNorth();
+
+  // ---------- Εμφάνιση: Αυτόματο / Ανοιχτό / Σκούρο ----------
+  const sysDark = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : { matches: false };
+  function themeSetting() { return S.settings.theme || 'auto'; }
+  function wantDark() { const t = themeSetting(); return t === 'dark' || (t === 'auto' && sysDark.matches); }
+  function googleScheme() { const t = themeSetting(); return t === 'dark' ? 'DARK' : t === 'light' ? 'LIGHT' : 'FOLLOW_SYSTEM'; }
+  function applyTheme() {
+    const t = themeSetting(), dark = wantDark();
+    if (t === 'auto') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', t);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', dark ? '#0b0f17' : '#2563eb');
+    $('map').classList.toggle('dark-tiles', !!(mv && mv.kind === 'leaflet' && dark));
+    document.querySelectorAll('#themeSeg button').forEach((b) => b.classList.toggle('on', b.dataset.theme === t));
+  }
+  // ο χάρτης Google δεν αλλάζει χρώμα αφού φορτώσει: τον ξαναφορτώνουμε στην ίδια θέση
+  async function restartMapForTheme() {
+    if (!mv || mv.kind !== 'google') return;
+    const rendered = mv.scheme === 'FOLLOW_SYSTEM' ? sysDark.matches : mv.scheme === 'DARK';
+    if (rendered === wantDark() && (mv.scheme === 'FOLLOW_SYSTEM') === (themeSetting() === 'auto')) return;
+    if (window.RootingNav && RootingNav.active()) return; // όχι στη μέση της πλοήγησης
+    const c = mv.getCenter(), z = mv.getZoom();
+    const el = $('map').cloneNode(false); $('map').replaceWith(el);
+    mv = null; trafficOn = false; $('btnTraffic').classList.remove('on');
+    await startMap();
+    mv.setView(c.lat, c.lng, z);
+    render();
+  }
+  function setTheme(t) { S.settings.theme = t; save(); applyTheme(); restartMapForTheme(); }
+  document.querySelectorAll('#themeSeg button').forEach((b) => { b.onclick = () => setTheme(b.dataset.theme); });
+  if (sysDark.addEventListener) sysDark.addEventListener('change', () => { if (themeSetting() === 'auto') applyTheme(); });
+  applyTheme();
+
+  // ---------- Μενού χάρτη (☰) ----------
+  function setMenu(open) {
+    $('mapMenu').classList.toggle('hidden', !open);
+    $('btnMenu').classList.toggle('open', open);
+    $('btnMenu').setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  $('btnMenu').onclick = (e) => { e.stopPropagation(); setMenu($('mapMenu').classList.contains('hidden')); };
+  $('mapMenu').addEventListener('click', (e) => e.stopPropagation());
+  document.addEventListener('pointerdown', (e) => { if (!$('mapMenu').classList.contains('hidden') && !e.target.closest('.map-ctrls')) setMenu(false); }, true);
+  $('btnSettings').addEventListener('click', () => setMenu(false));
 
   // ---------- Εκκίνηση ----------
   render();
