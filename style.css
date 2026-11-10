@@ -443,3 +443,27 @@ body.navigating .modal { z-index: 1100; }
 @container (max-width: 250px) { .next-actions .btn .ic { display: none; } }
 .chips .chip { font-size: clamp(10.5px, 3.8cqi, 12.5px); padding: 6px 2px; }
 @container (max-width: 250px) { .chips { gap: 4px; } .chips .chip .ic { width: 17px; height: 17px; } }
+
+/* ---- Πλοήγηση: μεγάλη διεύθυνση, πελάτης, κουμπί αποτυχίας ---- */
+.nav-dest { margin: 2px 0 8px; }
+.nav-dest-addr { font-size: 20px; font-weight: 800; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.nav-dest-who { font-size: 15px; color: var(--muted); margin-top: 3px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.nav-dest-who:empty { display: none; }
+.nav-dest-who .ic { width: 15px; height: 15px; vertical-align: -2px; }
+.nav-info b { font-size: 19px; }
+.nav-btns { grid-template-columns: minmax(0, 1fr) 56px 56px 56px !important; }
+.nav-btns.with-call { grid-template-columns: minmax(0, 1fr) 56px 56px 56px 56px !important; }
+.nav-btns .nav-ic { min-width: 0; padding: 0; }
+.nav-exit { min-width: 0; padding: 0 8px; white-space: nowrap; overflow: hidden; }
+.nav-fail { color: var(--danger); }
+@media (orientation: landscape) and (max-height: 560px) {
+  .nav-dest-addr { font-size: 17px; -webkit-line-clamp: 1; }
+  .nav-dest { margin-bottom: 4px; }
+  .nav-info { margin-bottom: 6px; }
+  .nav-btns .nav-ic, .nav-exit { min-height: 46px; }
+}
+
+.nav-dest-who .who { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.nav-btns { grid-template-columns: minmax(0, 1fr) 52px 52px 52px !important; gap: 7px; }
+.nav-btns.with-call { grid-template-columns: minmax(0, 1fr) 52px 52px 52px 52px !important; }
+.nav-exit { font-size: 16px; }

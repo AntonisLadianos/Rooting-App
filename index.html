@@ -157,15 +157,20 @@
     </div>
     <div class="nav-bottom">
       <div id="navUndo"></div>
+      <div class="nav-dest">
+        <div id="navDest" class="nav-dest-addr"></div>
+        <div id="navWho" class="nav-dest-who"></div>
+      </div>
       <div class="nav-info">
         <div><b id="navEta"></b><small>άφιξη</small></div>
-        <div class="nav-remain"><b id="navRemain"></b><small id="navDest"></small></div>
+        <div class="nav-remain"><b id="navRemain"></b><small>απομένουν</small></div>
       </div>
       <div class="nav-btns">
-        <button id="navExit" class="btn nav-exit"><i data-ic="x"></i> Τέλος</button>
+        <button id="navExit" class="btn nav-exit">Τέλος</button>
         <a id="navCallBar" class="btn nav-ic nav-call hidden" aria-label="Κλήση"><i data-ic="phone"></i></a>
-        <button id="navMute" class="btn nav-ic"><i data-ic="vol"></i></button>
-        <button id="navDoneMan" class="btn nav-ic nav-ok"><i data-ic="check"></i></button>
+        <button id="navMute" class="btn nav-ic" aria-label="Φωνή"><i data-ic="vol"></i></button>
+        <button id="navFailMan" class="btn nav-ic nav-fail" aria-label="Αποτυχία"><i data-ic="x"></i></button>
+        <button id="navDoneMan" class="btn nav-ic nav-ok" aria-label="Παραδόθηκε"><i data-ic="check"></i></button>
       </div>
     </div>
   </div>

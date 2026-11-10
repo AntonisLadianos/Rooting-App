@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '28';
+  const APP_VERSION = '29';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // ---------- Κατάσταση ----------
@@ -642,6 +642,9 @@
     $('navArrive').classList.add('hidden');
     renderNavUndo();
     setupNavCall(s);
+    // πελάτης(ες) και δέματα κάτω από τη διεύθυνση
+    const who = (s.people || []).map((p) => p.name).filter(Boolean).join(' · ') || s.note || '';
+    $('navWho').innerHTML = [who ? `<span class="who">${ic('user')} ${esc(who)}</span>` : '', s.pkgs ? `<b class="pkg-badge${s.pkgs > 1 ? ' multi' : ''}">${ic('package')} ${pkgsText(s.pkgs)}</b>` : ''].filter(Boolean).join('');
     RootingNav.start({
       dest: { lat: s.lat, lng: s.lng, title: title(s) },
       from: myPos, mv, osrm: OSRM, muted: !!S.settings.navMuted,
@@ -679,6 +682,7 @@
   $('navDone').onclick = () => navFinishStop(false);
   $('navFail').onclick = () => navFinishStop(true);
   $('navDoneMan').onclick = () => { if (navStop && confirm(`Παραδόθηκε: ${title(navStop).split(',')[0]};`)) navFinishStop(false); };
+  $('navFailMan').onclick = () => { if (navStop && confirm(`Αποτυχία παράδοσης: ${title(navStop).split(',')[0]};`)) navFinishStop(true); };
 
   // Όλη η υπόλοιπη διαδρομή στο Google Maps (έως 10 στάσεις: 9 ενδιάμεσες + προορισμός)
   const GM_CHUNK = 10;
