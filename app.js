@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '39';
+  const APP_VERSION = '40';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -36,6 +36,10 @@
     settings: { navApp: 'google', serviceMin: 3 }
   };
   let S = load();
+  // παλιές στάσεις: καθάρισμα σκουπιδιών ανάγνωσης από το εικονίδιο αντιγραφής («Παπανδρέου 71, ἴνι, Γαζι»)
+  (S.stops || []).forEach((st) => {
+    if (st.orig && /[\u1F00-\u1FFF]/.test(st.orig)) st.orig = st.orig.replace(/\S*[\u1F00-\u1FFF]\S*/g, ' ').replace(/\s+,/g, ',').replace(/(,\s*)+,/g, ',').replace(/\s+/g, ' ').replace(/^[,\s]+|[,\s]+$/g, '').trim();
+  });
   let myPos = null;
 
   function load() {
