@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '47';
+  const APP_VERSION = '48';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -1364,8 +1364,11 @@
     openModal(`Βρέθηκαν ${items.length} διευθύνσεις`, `
       <div class="tally">
         <div id="tallyTxt" class="tally-txt"></div>
-        <label class="tally-in">Η εφαρμογή courier λέει: <input id="tallyN" type="number" inputmode="numeric" min="0" placeholder="π.χ. 45"></label>
+        <div class="tally-q">Τι γράφει η εφαρμογή courier;</div>
+        <label class="tally-in"><span>Καρτέλες (σύνολο)</span><input id="tallyN" type="number" inputmode="numeric" min="0" placeholder="π.χ. 48"></label>
         <div id="tallyRes" class="tally-res"></div>
+        <label class="tally-in"><span>Στάσεις</span><input id="tallyS" type="number" inputmode="numeric" min="0" placeholder="π.χ. 41"></label>
+        <div id="tallyResS" class="tally-res"></div>
       </div>
       <p class="muted small">Έλεγξε και διόρθωσε αν χρειάζεται. Ξετσέκαρε όσες δεν θέλεις.${items.some((x) => x.check) ? ` <b class="approx">${ic('alert')} Κοίτα πρώτα τις πορτοκαλί γραμμές.</b>` : ''}</p>
       <ul class="found-list">${items.map((it, i) => `
@@ -1391,7 +1394,16 @@
         const cust = on.filter((x) => !x.hub), hubs = on.filter((x) => x.hub);
         const cards = cust.reduce((a, x) => a + (x.cards || 1), 0);
         const pk = cust.reduce((a, x) => a + (x.pkgs || 1), 0);
-        b.querySelector('#tallyTxt').innerHTML = `Βρήκα <b>${cards}</b> καρτέλες πελατών · <b>${pk}</b> δέματα` + (hubs.length ? ` · <b>${hubs.length}</b> Locker/Clever Point` : '');
+        // στάσεις: μία ανά διεύθυνση (η εφαρμογή courier μπορεί να μετράει μία ανά πελάτη -> δεχόμαστε και τα δύο)
+        const stopsA = cust.length, stopsP = cust.reduce((a, x) => a + Math.max(1, (x.people || []).length), 0);
+        b.querySelector('#tallyTxt').innerHTML = `Βρήκα <b>${cards}</b> καρτέλες πελατών · <b>${pk}</b> δέματα · <b>${stopsA}</b> στάσεις` + (hubs.length ? ` · <b>${hubs.length}</b> Locker/Clever Point` : '');
+        const nS = parseInt(b.querySelector('#tallyS').value, 10), resS = b.querySelector('#tallyResS');
+        if (!(nS > 0)) resS.innerHTML = '';
+        else if ([stopsA, stopsA + hubs.length, stopsP, stopsP + hubs.length].includes(nS)) resS.innerHTML = `<span class="ok-txt">${ic('check')} Ταιριάζει</span>`;
+        else {
+          const d = nS - (stopsA + hubs.length);
+          resS.innerHTML = `<span class="fail-txt">${ic('alert')} Δεν ταιριάζει: ${d > 0 ? `λείπουν ~${d} στάσεις. Μήπως λείπει screenshot, ή ενώθηκαν δύο διαφορετικές διευθύνσεις;` : `περισσεύουν ~${-d}. Μήπως η ίδια διεύθυνση γράφτηκε με δύο τρόπους και βγήκε δύο στάσεις;`}</span>`;
+        }
         const n = parseInt(b.querySelector('#tallyN').value, 10), res = b.querySelector('#tallyRes');
         if (!(n > 0)) { res.innerHTML = ''; return; }
         const okN = [cards, cards + hubs.length, pk, pk + hubs.length];
@@ -1402,6 +1414,7 @@
         }
       };
       b.querySelector('#tallyN').addEventListener('input', tally);
+      b.querySelector('#tallyS').addEventListener('input', tally);
       b.querySelectorAll('[data-ck]').forEach((ch) => {
         ch.onclick = () => {
           const it = items[+ch.dataset.ck], v = +ch.dataset.v;
