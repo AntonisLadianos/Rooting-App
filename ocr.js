@@ -396,6 +396,8 @@
     const preLines = raw.slice(0, heads[0]).map(clean);
     const prePhone = (preLines.find(isPhoneLine) || '');
     const cards = [];
+    // «Παράδοση σε Αποθήκη»: η εφαρμογή courier τη μετράει σαν μία επιπλέον καρτέλα/στάση (επιστροφή στην αποθήκη)
+    const depot = heads.some((h) => /παρ[αά]δοση\s*σε\s*αποθ[ήη]κη/i.test(clean(raw[h])));
     heads.forEach((h, k) => {
       const seg = raw.slice(h, k + 1 < heads.length ? heads[k + 1] : raw.length);
       const kind = hubKind(clean(seg[0]));
@@ -453,7 +455,7 @@
         closed: lines.some(isCardEnd) || !!phoneLine
       });
     });
-    return { cards, pre, prePhone: prePhone ? normPhone(prePhone) : '', prePkgs: pkgCount(preLines), preCodes: codesOf(preLines) };
+    return { cards, pre, depot, prePhone: prePhone ? normPhone(prePhone) : '', prePkgs: pkgCount(preLines), preCodes: codesOf(preLines) };
   }
 
   // Ενώνει τα αποτελέσματα πολλών screenshots (με τη σειρά που τραβήχτηκαν).

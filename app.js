@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '51';
+  const APP_VERSION = '52';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -1374,7 +1374,7 @@
       const m = matchExisting(g);
       return Object.assign({}, g, { dup: !!(m && m.dup), mergeInto: m && !m.dup ? m.stop.id : null });
     });
-    reviewFound(items);
+    reviewFound(items, perImage.some((x) => x && x.depot));
   });
 
   // Υπάρχει ήδη στάση στην ίδια διεύθυνση; dup = ίδια δέματα (κωδικοί/ονόματα), αλλιώς θα προστεθούν σε αυτήν
@@ -1418,7 +1418,7 @@
     return pp.map((p) => p.name + (showN ? ` (${p.pkgs || 1})` : '')).join(' · ');
   }
 
-  function reviewFound(items) {
+  function reviewFound(items, depot) {
     if (!items.length) {
       openModal('Δεν βρέθηκαν διευθύνσεις', `<p>Δεν αναγνώρισα διευθύνσεις στην εικόνα.</p>
         <p class="muted small">Βεβαιώσου ότι οι διευθύνσεις φαίνονται καθαρά, ή χρησιμοποίησε «📋 Λίστα διευθύνσεων».</p>`);
@@ -1459,19 +1459,20 @@
         const pk = cust.reduce((a, x) => a + (x.pkgs || 1), 0);
         // η εφαρμογή courier μετράει: στάση = μία ανά διεύθυνση (όσοι πελάτες κι αν είναι) + κάθε Locker/Clever Point· καρτέλες = όλες + Locker/Clever Point
         const stopsA = cust.length;
-        b.querySelector('#tallyTxt').innerHTML = `Βρήκα <b>${cards + hubs.length}</b> καρτέλες` + (hubs.length ? ` (${cards} πελατών + ${hubs.length} Locker/Clever Point)` : '') + ` · <b>${stopsA + hubs.length}</b> στάσεις · ${pk} δέματα πελατών`;
+        const dep = depot ? 1 : 0; // η επιστροφή στην αποθήκη μετράει +1 στην εφαρμογή courier
+        b.querySelector('#tallyTxt').innerHTML = `Βρήκα <b>${cards + hubs.length + dep}</b> καρτέλες` + (hubs.length || dep ? ` (${cards} πελατών${hubs.length ? ` + ${hubs.length} Locker/Clever Point` : ''}${dep ? ' + 1 αποθήκη' : ''})` : '') + ` · <b>${stopsA + hubs.length + dep}</b> στάσεις · ${pk} δέματα πελατών`;
         const nS = parseInt(b.querySelector('#tallyS').value, 10), resS = b.querySelector('#tallyResS');
         if (!(nS > 0)) resS.innerHTML = '';
-        else if (nS === stopsA + hubs.length) resS.innerHTML = `<span class="ok-txt">${ic('check')} Ταιριάζει</span>`;
+        else if (nS === stopsA + hubs.length + dep) resS.innerHTML = `<span class="ok-txt">${ic('check')} Ταιριάζει</span>`;
         else {
-          const d = nS - (stopsA + hubs.length);
+          const d = nS - (stopsA + hubs.length + dep);
           resS.innerHTML = `<span class="fail-txt">${ic('alert')} Δεν ταιριάζει: ${d > 0 ? `λείπουν ~${d} στάσεις. Μήπως λείπει screenshot, ή ενώθηκαν δύο διαφορετικές διευθύνσεις;` : `περισσεύουν ~${-d}. Μήπως η ίδια διεύθυνση γράφτηκε με δύο τρόπους και βγήκε δύο στάσεις;`}</span>`;
         }
         const n = parseInt(b.querySelector('#tallyN').value, 10), res = b.querySelector('#tallyRes');
         if (!(n > 0)) { res.innerHTML = ''; return; }
-        if (n === cards + hubs.length) res.innerHTML = `<span class="ok-txt">${ic('check')} Ταιριάζει</span>`;
+        if (n === cards + hubs.length + dep) res.innerHTML = `<span class="ok-txt">${ic('check')} Ταιριάζει</span>`;
         else {
-          const d = n - (cards + hubs.length);
+          const d = n - (cards + hubs.length + dep);
           res.innerHTML = `<span class="fail-txt">${ic('alert')} Δεν ταιριάζει: ${d > 0 ? `λείπουν ~${d}` : `περισσεύουν ~${-d}`}. ${d > 0 ? 'Μήπως λείπει κάποιο screenshot ή κομμάτι λίστας;' : 'Μήπως κάποια καρτέλα μετρήθηκε δύο φορές (δες τις πορτοκαλί);'}</span>`;
         }
       };
