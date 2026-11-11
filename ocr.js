@@ -61,11 +61,34 @@
     return c;
   }
 
+  // Ξαναφτιάχνει το κείμενο από τις λέξεις, πετώντας τα «γράμματα» που βγαίνουν από εικονίδια:
+  // το εικονίδιο αντιγραφής δεξιά από τη διεύθυνση και το πορτοκαλί κουμπί φωτογραφίας δίπλα στον κωδικό
+  // (απομονωμένα στο τέλος της γραμμής, λίγα σύμβολα, χωρίς αριθμούς, συνήθως με χαμηλή βεβαιότητα).
+  function isIconWord(x, prev, h) {
+    const t = x.text || '';
+    if (/[\u1F00-\u1FFF]/.test(t)) return true;                       // «ἴνι», «{[᾿}»
+    if (/^[^\p{L}\d]+$/u.test(t)) return true;                         // «[[]», «©»
+    if (/\d{2,}/.test(t) || t.length > 4) return false;               // αριθμοί / κανονικές λέξεις μένουν
+    const gap = prev ? x.bbox.x0 - prev.bbox.x1 : 0;
+    return (gap > 1.2 * h && x.confidence < 75) || (x.confidence < 35 && /[^\p{L}\d,.]/u.test(t));
+  }
+  function cleanText(data) {
+    const out = [];
+    (data.blocks || []).forEach((b) => { b.paragraphs.forEach((p) => { p.lines.forEach((l) => {
+      const ws = l.words.slice().sort((a, c) => a.bbox.x0 - c.bbox.x0);
+      const h = Math.max(8, l.bbox.y1 - l.bbox.y0);
+      while (ws.length > 1 && isIconWord(ws[ws.length - 1], ws[ws.length - 2], h)) ws.pop(); // από το τέλος της γραμμής
+      out.push(ws.map((x) => x.text).join(' '));
+    }); }); out.push(''); });
+    return out.join('\n');
+  }
+
   // Επιστρέφει { text, ambig: [{ read: '208', alt: '20B' }] }
   async function recognize(file, onProgress, slot) {
     const w = await getWorker(onProgress, slot);
     const r = await w.recognize(file, {}, { text: true, blocks: true });
-    const text = (r.data && r.data.text) || '';
+    let text = (r.data && r.data.text) || '';
+    try { if (r.data.blocks && r.data.blocks.length) text = cleanText(r.data); } catch (e) { /* κρατάμε το αρχικό */ }
     const ambig = [];
     try {
       const words = [];
