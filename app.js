@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '43';
+  const APP_VERSION = '44';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -273,9 +273,30 @@
       .replace(/(^|,)\s*0\s*(?=,|$)/g, '$1').replace(/\s0(?=\s*,)/g, '') // «Νεα αλικαρνασσος 0,»
       .replace(/\s+,/g, ',').replace(/,\s*,/g, ',').replace(/\s+/g, ' ').replace(/^[,\s]+|[,\s]+$/g, '').trim();
   }
+  // ---------- Μνήμη διευθύνσεων ----------
+  // Θυμόμαστε κάθε διεύθυνση που βρέθηκε ΑΚΡΙΒΩΣ και κάθε θέση που διόρθωσε ο χρήστης: την επόμενη φορά
+  // μπαίνει αμέσως, χωρίς αναζήτηση. Οι «κατά προσέγγιση» δεν αποθηκεύονται (για να ξαναψαχτούν).
+  const GEO_KEY = 'rooting.geo', GEO_MAX = 4000;
+  let geoMem = null;
+  function geoLoad() { if (!geoMem) { try { geoMem = JSON.parse(localStorage.getItem(GEO_KEY) || '{}'); } catch (e) { geoMem = {}; } } return geoMem; }
+  function geoKey(q) { return RootingOCR.key(cleanQuery(q) || q); }
+  function geoRecall(q) { const k = geoKey(q); return k.length >= 6 ? geoLoad()[k] || null : null; }
+  function geoRemember(q, r, fixed) {
+    const k = geoKey(q);
+    if (k.length < 6 || !r) return;
+    const m = geoLoad();
+    if (m[k] && m[k].fixed && !fixed) return; // η διόρθωση του χρήστη υπερισχύει
+    m[k] = { lat: r.lat, lng: r.lng, label: r.label, t: Date.now(), fixed: fixed ? 1 : 0 };
+    const ks = Object.keys(m);
+    if (ks.length > GEO_MAX) ks.sort((a, b) => (m[a].fixed - m[b].fixed) || (m[a].t - m[b].t)).slice(0, ks.length - GEO_MAX).forEach((x) => delete m[x]);
+    try { localStorage.setItem(GEO_KEY, JSON.stringify(m)); } catch (e) { /* γεμάτη μνήμη: αγνοούμε */ }
+  }
   async function geocodeSmart(qIn, region) {
+    const mem = geoRecall(qIn);
+    if (mem) return { label: mem.label, lat: mem.lat, lng: mem.lng, exact: true, query: qIn, remembered: true };
     const q = cleanQuery(qIn) || qIn;
     const r = await geocodeSmart0(q, region);
+    if (r && r.exact !== false) geoRemember(qIn, r, false);
     if (r) r.query = qIn;
     if (rejected.has(q) && q !== qIn) { rejected.set(qIn, rejected.get(q)); rejected.delete(q); }
     return r;
@@ -1025,6 +1046,7 @@
     if (!s) return;
     const apply = (lat, lng, label) => {
       s.lat = lat; s.lng = lng; s.label = label || s.label; s.exact = true;
+      geoRemember(s.orig || s.label, { lat, lng, label: s.label }, true); // την επόμενη φορά μπαίνει κατευθείαν εδώ
       if (S.route) { S.route.legs = null; S.route.geometry = null; scheduleLegs(); }
       save(); render();
       if (mv) mv.setView(lat, lng, Math.max(mv.getZoom(), 16));
@@ -1464,7 +1486,46 @@
         <p class="muted small">Τώρα: ${mv && mv.kind === 'google' ? 'χάρτης Google' : 'δωρεάν χάρτης'}.</p>` : ''}
       </div>
       <button class="btn btn-ghost btn-block" id="sExport">${ic('download')} Εξαγωγή στάσεων (κείμενο)</button>
+      <div class="card google-card">
+        <b>Αντίγραφο ασφαλείας</b>
+        <p class="muted small">Σώζει σε ένα αρχείο όλα όσα έχει η εφαρμογή: στάσεις, ρυθμίσεις, κλειδί Google, διευθύνσεις Locker/Clever Point και τη μνήμη διευθύνσεων (${Object.keys(geoLoad()).length}). Κράτα το στα Αρχεία ή στο iCloud — αν σβηστεί η εφαρμογή ή αλλάξεις κινητό, το ξαναφορτώνεις από εδώ.</p>
+        <div class="grid2">
+          <button class="btn btn-primary" id="sBackup">${ic('download')} Αποθήκευση</button>
+          <button class="btn btn-ghost" id="sRestore">${ic('restore')} Επαναφορά</button>
+        </div>
+        <input id="sRestoreFile" type="file" accept=".json,application/json" hidden>
+        <p class="muted small">${S.settings.lastBackup ? 'Τελευταίο αντίγραφο: ' + new Date(S.settings.lastBackup).toLocaleDateString('el-GR') : 'Δεν έχεις κρατήσει ακόμα αντίγραφο.'} Το αρχείο περιέχει το κλειδί σου — μην το στέλνεις σε άλλους.</p>
+      </div>
       <p class="muted small">Χάρτες: © OpenStreetMap contributors. Δρομολόγηση: OSRM. Αναζήτηση: ${S.settings.googleKey ? 'Google, ' : ''}Photon / Nominatim.<br>Τα δεδομένα σου αποθηκεύονται μόνο σε αυτό το κινητό.<br>Έκδοση ${APP_VERSION}</p>`, (b) => {
+      b.querySelector('#sBackup').onclick = async () => {
+        S.settings.lastBackup = Date.now(); save();
+        const data = JSON.stringify({ app: 'rooting', v: 1, at: new Date().toISOString(), state: S, geo: geoLoad() });
+        const name = `rooting-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        try {
+          const file = new File([data], name, { type: 'application/json' });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'Rooting — αντίγραφο ασφαλείας' }); toast('Το αντίγραφο είναι έτοιμο'); return; }
+        } catch (e) { if (e && e.name === 'AbortError') return; }
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' })); a.download = name;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+        toast('Το αντίγραφο κατέβηκε');
+      };
+      const rf = b.querySelector('#sRestoreFile');
+      b.querySelector('#sRestore').onclick = () => { rf.value = ''; rf.click(); };
+      rf.onchange = async () => {
+        const f = rf.files && rf.files[0];
+        if (!f) return;
+        try {
+          const o = JSON.parse(await f.text());
+          if (!o || o.app !== 'rooting' || !o.state || !Array.isArray(o.state.stops)) throw new Error('bad');
+          const when = o.at ? new Date(o.at).toLocaleString('el-GR', { dateStyle: 'short', timeStyle: 'short' }) : '';
+          if (!confirm(`Επαναφορά αντιγράφου ${when} με ${o.state.stops.length} στάσεις;\nΌ,τι έχει τώρα η εφαρμογή θα αντικατασταθεί.`)) return;
+          localStorage.setItem(STORE_KEY, JSON.stringify(o.state));
+          if (o.geo && typeof o.geo === 'object') localStorage.setItem(GEO_KEY, JSON.stringify(o.geo));
+          location.reload();
+        } catch (e) { toast('Το αρχείο δεν είναι αντίγραφο ασφαλείας του Rooting'); }
+      };
       const sel = b.querySelector('#sNav');
       sel.value = S.settings.navApp;
       sel.onchange = () => { S.settings.navApp = sel.value; save(); render(); };
@@ -1942,7 +2003,7 @@
         const reg = await navigator.serviceWorker.getRegistration();
         if (reg) await reg.update().catch(() => {});
       }
-      if (window.caches) { const ks = await caches.keys(); await Promise.all(ks.map((k) => caches.delete(k))); }
+      if (window.caches) { const ks = await caches.keys(); await Promise.all(ks.filter((k) => !/^rooting-vendor/.test(k)).map((k) => caches.delete(k))); }
       toast('Νέα έκδοση — ανανέωση…');
       setTimeout(() => location.reload(), 600);
     } catch (e) { /* χωρίς σύνδεση: συνεχίζουμε με ό,τι έχουμε */ }
