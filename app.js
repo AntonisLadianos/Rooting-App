@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '49';
+  const APP_VERSION = '50';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -1116,10 +1116,44 @@
   let pendingFix = null;
 
   // Επιλογή σημείου (για αφετηρία / τέλος)
-  function pickPlace(title, extraHtml, onPick, onMount) {
+  // std = true: δείχνει και «Εδώ που είμαι», «Θα το δείξω στον χάρτη» και τα αποθηκευμένα σημεία (π.χ. Αποθήκη)
+  function savePlace(it, name) {
+    S.places = (S.places || []).filter((x) => x.name !== name);
+    S.places.unshift({ name, label: name, lat: it.lat, lng: it.lng });
+    S.places = S.places.slice(0, 8); save();
+  }
+  // Ζητά όνομα για ένα σημείο που δόθηκε με GPS/χάρτη· με όνομα αποθηκεύεται για την επόμενη φορά
+  async function namedPlace(lat, lng) {
+    const name = (prompt('Δώσε ένα όνομα για να το θυμάμαι (π.χ. Αποθήκη, Σπίτι).\nΆφησέ το κενό αν είναι μόνο για σήμερα.', '') || '').trim();
+    const it = { label: name || await reverseGeocode(lat, lng), lat, lng, exact: true };
+    if (name) savePlace(it, name);
+    return it;
+  }
+  function pickPlace(title, extraHtml, onPick, onMount, std) {
+    const places = std ? (S.places || []) : [];
     openModal(title, `${extraHtml || ''}
-      <div class="search-wrap"><input id="pSearch" type="search" placeholder="Αναζήτηση διεύθυνσης…" autocomplete="off"></div>
+      ${std ? `${places.length ? `<div class="place-list">${places.map((pl, i) => `<span class="place-chip"><button class="place-go" data-i="${i}">${ic('home')} ${esc(pl.name)}</button><button class="place-del" data-i="${i}" aria-label="Διαγραφή">✕</button></span>`).join('')}</div>` : ''}
+      <div class="grid2">
+        <button class="btn btn-ghost" id="pHere">${ic('locate')} Εδώ που είμαι</button>
+        <button class="btn btn-ghost" id="pMap">${ic('map')} Στον χάρτη</button>
+      </div>` : ''}
+      <div class="search-wrap"><input id="pSearch" type="search" placeholder="Αναζήτηση διεύθυνσης ή επιχείρησης…" autocomplete="off"></div>
       <ul id="pRes" class="suggestions static"></ul>`, (b) => {
+      if (std) {
+        b.querySelectorAll('.place-go').forEach((bt) => { bt.onclick = () => { const pl = places[+bt.dataset.i]; onPick({ label: pl.label, lat: pl.lat, lng: pl.lng, exact: true }); closeModal(); }; });
+        b.querySelectorAll('.place-del').forEach((bt) => { bt.onclick = () => { S.places.splice(+bt.dataset.i, 1); save(); bt.parentNode.remove(); }; });
+        b.querySelector('#pHere').onclick = async () => {
+          try {
+            const pos = myPos || await getPosition(8000);
+            closeModal(); onPick(await namedPlace(pos.lat, pos.lng));
+          } catch (e) { toast('Δεν βρέθηκε η θέση σου'); }
+        };
+        b.querySelector('#pMap').onclick = () => {
+          closeModal(); setSheet('peek');
+          toast('Πάτα στο σημείο πάνω στον χάρτη');
+          pendingFix = async (lat, lng) => onPick(await namedPlace(lat, lng));
+        };
+      }
       const inp = b.querySelector('#pSearch'), res = b.querySelector('#pRes');
       let t = null, seq = 0;
       inp.addEventListener('input', () => {
@@ -1129,9 +1163,15 @@
         t = setTimeout(async () => {
           const my = ++seq;
           try {
-            const r = await geocode(q);
+            let r = [];
+            try { r = await geocode(q); } catch (e) { /* δοκιμάζουμε και τη Google */ }
+            // με κλειδί Google: βρίσκει και επιχειρήσεις/σημεία που δεν έχει ο δωρεάν χάρτης
+            if (googleEnabled() && q.length >= 5) {
+              const g = await googleGeocode(q, searchBias()).catch(() => null);
+              if (g && !r.some((x) => RootingGeo.distKm(x, g) < 0.03)) r.unshift(g);
+            }
             if (my !== seq) return;
-            res.innerHTML = '';
+            res.innerHTML = r.length ? '' : '<li class="muted">Δεν βρέθηκε — δοκίμασε «Στον χάρτη» ή «Εδώ που είμαι»</li>';
             r.forEach((it) => {
               const li = document.createElement('li');
               li.textContent = it.label;
@@ -1148,17 +1188,22 @@
   $('startRow').onclick = () => pickPlace('Αφετηρία',
     `<button class="btn btn-ghost btn-block" id="useGps">${ic('locate')} Χρήση τρέχουσας τοποθεσίας</button>`,
     (it) => { S.start = it; invalidateRoute(); save(); render(); fitAll(); },
-    (b) => { b.querySelector('#useGps').onclick = () => { S.start = null; invalidateRoute(); save(); render(); closeModal(); }; });
+    (b) => { b.querySelector('#useGps').onclick = () => { S.start = null; invalidateRoute(); save(); render(); closeModal(); }; }, true);
 
   $('endRow').onclick = () => pickPlace('Τέλος διαδρομής',
     `<button class="btn btn-ghost btn-block" id="endOpen">Όπου τελειώσει η τελευταία στάση</button>
      <button class="btn btn-ghost btn-block" id="endCycle">${ic('home')} Επιστροφή στην αφετηρία</button>
      <p class="muted small">…ή διάλεξε συγκεκριμένο σημείο τέλους:</p>`,
-    (it) => { S.endMode = 'fixed'; S.end = it; invalidateRoute(); save(); render(); fitAll(); },
+    (it) => { S.endMode = 'fixed'; S.end = it; endChanged(); toast('Τέλος διαδρομής: ' + it.label.split(',')[0]); },
     (b) => {
-      b.querySelector('#endOpen').onclick = () => { S.endMode = 'open'; S.end = null; invalidateRoute(); save(); render(); closeModal(); };
-      b.querySelector('#endCycle').onclick = () => { S.endMode = 'cycle'; S.end = null; invalidateRoute(); save(); render(); closeModal(); };
-    });
+      b.querySelector('#endOpen').onclick = () => { S.endMode = 'open'; S.end = null; endChanged(); closeModal(); };
+      b.querySelector('#endCycle').onclick = () => { S.endMode = 'cycle'; S.end = null; endChanged(); closeModal(); };
+    }, true);
+  // Άλλαξε το τέλος: αν υπάρχει ήδη δρομολόγιο, ξαναβγαίνει η σειρά για τις στάσεις που μένουν (οι παραδομένες μένουν ως έχουν)
+  function endChanged() {
+    save(); render();
+    if (S.route && S.stops.some((x) => !x.done)) optimize(); else { invalidateRoute(); save(); render(); fitAll(); }
+  }
 
   // ---------- Μαζική εισαγωγή ----------
   $('btnPaste').onclick = () => openModal('Λίστα διευθύνσεων', `

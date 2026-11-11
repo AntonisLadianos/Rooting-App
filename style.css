@@ -602,3 +602,12 @@ body.navigating .modal { z-index: 1100; }
 .tally-q { margin-top: 8px; font-size: 13px; color: var(--muted); }
 .tally-in { justify-content: space-between; }
 .tally-in span { flex: 1; }
+
+/* ---- Αποθηκευμένα σημεία (Αποθήκη, Σπίτι…) ---- */
+.place-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.place-chip { display: inline-flex; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 20px; overflow: hidden; }
+.place-chip button { border: 0; background: none; color: var(--text); font: inherit; padding: 8px 10px; cursor: pointer; }
+.place-go { font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+.place-go .ic { width: 16px; height: 16px; color: var(--primary); }
+.place-del { color: var(--muted) !important; border-left: 1px solid var(--line) !important; }
+.suggestions li.muted { color: var(--muted); cursor: default; }
