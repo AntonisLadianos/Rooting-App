@@ -446,7 +446,7 @@
     const hubs = [];
     uniq.filter((it) => it.hub).forEach((it) => {
       const h = hubs.find((x) => x.hub.kind === it.hub.kind && nameKey(x.hub.name) === nameKey(it.hub.name));
-      if (!h) { hubs.push(Object.assign({}, it, { hub: Object.assign({}, it.hub) })); return; }
+      if (!h) { hubs.push(Object.assign({}, it, { hub: Object.assign({}, it.hub), cards: 1 })); return; }
       ['deliver', 'pickup', 'ret'].forEach((k) => { if (it.hub[k] != null) h.hub[k] = Math.max(h.hub[k] || 0, it.hub[k]); });
       h.pkgs = h.hub.deliver || 0;
     });
@@ -461,7 +461,7 @@
       if (!g && it.phone && num(it.address)) g = groups.find((x) => num(x.address) === num(it.address) &&
         x.people.some((p) => p.phone === it.phone && nameKey(p.name) === nameKey(it.name)));
       if (!g) {
-        groups.push(Object.assign({}, it, { key: k, people: [person] }));
+        groups.push(Object.assign({}, it, { key: k, people: [person], cards: 1 }));
         return;
       }
       // είναι η ίδια καρτέλα (επικάλυψη screenshots);
@@ -474,7 +474,7 @@
         if (person.address && person.address.length > g.address.length && addrKey(person.address) === k) g.address = it.address;
         return;
       }
-      g.people.push(person); // άλλη καρτέλα στην ίδια διεύθυνση
+      g.people.push(person); g.cards++; // άλλη καρτέλα στην ίδια διεύθυνση
       if (it.ambig && !g.ambig) g.ambig = it.ambig;
     });
     groups.forEach((g) => {
@@ -482,9 +482,18 @@
       const byName = [];
       g.people.forEach((p) => {
         const e = byName.find((x) => nameKey(x.name) === nameKey(p.name));
-        if (e) { e.pkgs += p.pkgs; e.phone = e.phone || p.phone; e.codes = e.codes.concat(p.codes); } else byName.push(Object.assign({}, p));
+        if (e) {
+          // ίδιος πελάτης σε ΔΙΑΦΟΡΕΤΙΚΑ screenshots χωρίς ίδιο κωδικό: μπορεί να είναι η ίδια καρτέλα δύο φορές -> ο χρήστης ελέγχει
+          if (e.img !== p.img && !(e.codes.length && p.codes.length)) g.check = { name: e.name || p.name, minus: p.pkgs };
+          e.pkgs += p.pkgs; e.phone = e.phone || p.phone; e.codes = e.codes.concat(p.codes);
+        } else byName.push(Object.assign({}, p));
       });
       g.people = byName;
+      // ίδιο πρόσωπο με λίγο διαφορετική ανάγνωση ονόματος σε άλλο screenshot («Σοκολη» / «Σοκοληή»)
+      if (!g.check) byName.forEach((a, i) => byName.slice(i + 1).forEach((b) => {
+        const ka = nameKey(a.name), kb = nameKey(b.name);
+        if (!g.check && a.img !== b.img && !(a.codes.length && b.codes.length) && ka && kb && lev(ka, kb) <= Math.max(2, Math.floor(Math.min(ka.length, kb.length) * 0.25))) g.check = { name: b.name, minus: b.pkgs };
+      }));
       g.pkgs = byName.reduce((a, p) => a + (p.pkgs || 1), 0);
       g.name = byName.map((p) => p.name).filter(Boolean).join(' · ');
       g.phone = (byName.find((p) => p.phone) || {}).phone || '';

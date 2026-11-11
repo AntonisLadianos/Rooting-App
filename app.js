@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '38';
+  const APP_VERSION = '39';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -1286,22 +1286,61 @@
       return;
     }
     openModal(`Βρέθηκαν ${items.length} διευθύνσεις`, `
-      <p class="muted small">Έλεγξε και διόρθωσε αν χρειάζεται. Ξετσέκαρε όσες δεν θέλεις.</p>
+      <div class="tally">
+        <div id="tallyTxt" class="tally-txt"></div>
+        <label class="tally-in">Η εφαρμογή courier λέει: <input id="tallyN" type="number" inputmode="numeric" min="0" placeholder="π.χ. 45"></label>
+        <div id="tallyRes" class="tally-res"></div>
+      </div>
+      <p class="muted small">Έλεγξε και διόρθωσε αν χρειάζεται. Ξετσέκαρε όσες δεν θέλεις.${items.some((x) => x.check) ? ` <b class="approx">${ic('alert')} Κοίτα πρώτα τις πορτοκαλί γραμμές.</b>` : ''}</p>
       <ul class="found-list">${items.map((it, i) => `
-        <li>
+        <li${it.check ? ' class="needs-check"' : ''}>
           <input type="checkbox" id="fc${i}" ${it.dup || it.fragment ? '' : 'checked'}>
           <div class="found-body">
             ${it.hub ? `<div class="hub-head"><b class="hub-badge hub-${it.hub.kind}">${ic('home')} ${hubKind(it.hub)}</b> <b>${esc(it.hub.name || '')}</b></div>` : ''}
             <input type="text" id="fa${i}" value="${esc(it.hub ? ((hubMem(it.hub) || {}).addr || '') : it.address)}"${it.hub ? ` placeholder="Γράψε τη διεύθυνση του ${hubKind(it.hub)}"` : ''}>
             <small id="fs${i}">${it.hub ? [it.hub.deliver ? `<b class="pkg-badge">${ic('package')} ${pkgsText(it.hub.deliver)}</b>` : '', esc(hubNote(it.hub)),
               it.dup ? '<b>υπάρχει ήδη</b>' : '', hubMem(it.hub) ? `<span class="hub-mem">${ic('check')} τη θυμάμαι από άλλη μέρα</span>` : `<span class="hub-ask">${ic('alert')} γράψε τη διεύθυνση μία φορά — θα τη θυμάμαι</span>`].filter(Boolean).join(' · ') : [it.pkgs > 1 ? `<b class="pkg-badge">${ic('package')} ${pkgsText(it.pkgs)}</b>` : '', (it.people || []).length ? ic('user') + ' ' + esc(whoText(it)) : (it.name ? ic('user') + ' ' + esc(it.name) : ''), it.phone ? ic('phone') + ' ' + esc(it.phone) : '', it.dup ? '<b>υπάρχει ήδη</b>' : '', it.mergeInto ? `<b class="merge-note">${ic('plus')} θα μπει στη στάση που υπάρχει ήδη σε αυτή τη διεύθυνση</b>` : '', it.ambig ? `<span class="ambig">${ic('alert')} Αριθμός: <button class="chip-sm on" data-i="${i}" data-v="a">${esc(it.ambig.a)}</button> ή <button class="chip-sm" data-i="${i}" data-v="b">${esc(it.ambig.b)}</button>;</span>` : '', it.fragment ? `<b>${ic('alert')} κομμάτι διεύθυνσης — συμπλήρωσε την οδό</b>` : ''].filter(Boolean).join(' · ')}</small>
+            ${it.check ? `<div class="check-row">${ic('alert')} Ίσως η ίδια καρτέλα του <b>${esc(it.check.name || 'πελάτη')}</b> πιάστηκε σε δύο screenshots. Πόσα δέματα;
+              <button class="chip-sm" data-ck="${i}" data-v="${it.pkgs - it.check.minus}">${pkgsText(it.pkgs - it.check.minus)}</button>
+              <button class="chip-sm" data-ck="${i}" data-v="${it.pkgs}">${pkgsText(it.pkgs)}</button></div>` : ''}
           </div>
         </li>`).join('')}</ul>
       <button class="btn btn-primary btn-block" id="foundGo">Προσθήκη</button>
       <div id="foundLog" class="bulk-log"></div>`, (b) => {
       const btn = b.querySelector('#foundGo');
       const count = () => items.filter((_, i) => b.querySelector('#fc' + i).checked && b.querySelector('#fa' + i).value.trim()).length;
-      const upd = () => { btn.textContent = `Προσθήκη ${count()} στάσεων`; btn.disabled = !count(); };
+      // σύνολα για σύγκριση με την εφαρμογή courier
+      const tally = () => {
+        const on = items.filter((_, i) => b.querySelector('#fc' + i).checked || items[i].dup);
+        const cust = on.filter((x) => !x.hub), hubs = on.filter((x) => x.hub);
+        const cards = cust.reduce((a, x) => a + (x.cards || 1), 0);
+        const pk = cust.reduce((a, x) => a + (x.pkgs || 1), 0);
+        b.querySelector('#tallyTxt').innerHTML = `Βρήκα <b>${cards}</b> καρτέλες πελατών · <b>${pk}</b> δέματα` + (hubs.length ? ` · <b>${hubs.length}</b> Locker/Clever Point` : '');
+        const n = parseInt(b.querySelector('#tallyN').value, 10), res = b.querySelector('#tallyRes');
+        if (!(n > 0)) { res.innerHTML = ''; return; }
+        const okN = [cards, cards + hubs.length, pk, pk + hubs.length];
+        if (okN.includes(n)) res.innerHTML = `<span class="ok-txt">${ic('check')} Ταιριάζει</span>`;
+        else {
+          const d = n - (cards + hubs.length);
+          res.innerHTML = `<span class="fail-txt">${ic('alert')} Δεν ταιριάζει: ${d > 0 ? `λείπουν ~${d}` : `περισσεύουν ~${-d}`}. ${d > 0 ? 'Μήπως λείπει κάποιο screenshot ή κομμάτι λίστας;' : 'Μήπως κάποια καρτέλα μετρήθηκε δύο φορές (δες τις πορτοκαλί);'}</span>`;
+        }
+      };
+      b.querySelector('#tallyN').addEventListener('input', tally);
+      b.querySelectorAll('[data-ck]').forEach((ch) => {
+        ch.onclick = () => {
+          const it = items[+ch.dataset.ck], v = +ch.dataset.v;
+          const diff = it.pkgs - v;
+          it.pkgs = v;
+          const pp = (it.people || []).find((p) => p.name === it.check.name) || (it.people || [])[0];
+          if (pp) pp.pkgs = Math.max(1, (pp.pkgs || 1) - diff);
+          it.cards = Math.max(1, (it.cards || 1) - diff);
+          it.check.minus = 0;
+          ch.parentNode.querySelectorAll('.chip-sm').forEach((x) => x.classList.toggle('on', x === ch));
+          tally();
+        };
+      });
+      const upd0 = () => { btn.textContent = `Προσθήκη ${count()} στάσεων`; btn.disabled = !count(); };
+      const upd = () => { upd0(); tally(); };
       items.forEach((_, i) => { b.querySelector('#fc' + i).addEventListener('change', upd); b.querySelector('#fa' + i).addEventListener('input', upd); });
       // Locker/Clever Point που δεν έχουμε ξαναδεί: δοκιμάζουμε να τα βρει η Google από το όνομα (ο χρήστης ελέγχει)
       if (googleEnabled()) items.forEach((it, i) => {

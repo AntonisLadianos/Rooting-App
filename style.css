@@ -558,3 +558,15 @@ body.navigating .modal { z-index: 1100; }
   html, body { height: 100vh; }
   body, #app, .modal, .busy, .drive, .nav { bottom: auto; height: 100vh; }
 }
+
+/* ---- Έλεγχος πριν την προσθήκη ---- */
+.tally { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; font-size: 14.5px; }
+.tally-in { display: flex; align-items: center; gap: 8px; margin-top: 8px; color: var(--muted); font-size: 14px; }
+.tally-in input { width: 90px; font-size: 16px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text); }
+.tally-res { margin-top: 6px; font-weight: 600; font-size: 14px; }
+.tally-res:empty { display: none; }
+.tally-res .ic { width: 14px; height: 14px; vertical-align: -2px; }
+.ok-txt { color: var(--success); }
+.found-list li.needs-check { border: 2px solid #f59e0b; background: rgba(245,158,11,.08); }
+.check-row { margin-top: 6px; font-size: 13.5px; color: #b45309; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.check-row .ic { width: 14px; height: 14px; }
