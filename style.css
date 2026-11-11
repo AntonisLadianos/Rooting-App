@@ -578,3 +578,8 @@ body.navigating .modal { z-index: 1100; }
   box-shadow: 0 4px 14px rgba(0,0,0,.3); cursor: pointer; }
 .nav-recenter.hidden { display: none; }
 .nav-recenter .ic { width: 20px; height: 20px; }
+
+/* ---- Ρυθμίσεις: ανάγνωση με Google ---- */
+.vision-box { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
+.vision-row { display: flex; gap: 10px; align-items: flex-start; }
+.vision-row input { width: 22px; height: 22px; flex: none; margin-top: 2px; }

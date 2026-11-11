@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '44';
+  const APP_VERSION = '45';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -1233,7 +1233,9 @@
       // 2 screenshots ταυτόχρονα (όταν είναι 3+), η σειρά διατηρείται για την ένωση κομμένων καρτελών
       const results = new Array(files.length);
       let nextIdx = 0, doneN = 0;
-      const lanes = files.length >= 3 ? 2 : 1;
+      const useVision = visionOn();
+      let visionFail = null, viaGoogle = 0;
+      const lanes = useVision ? Math.min(4, files.length) : (files.length >= 3 ? 2 : 1);
       busy(true, files.length > 1 ? `Διαβάζω ${files.length} εικόνες…` : 'Διαβάζω την εικόνα…');
       const lane = async (slot) => {
         while (nextIdx < files.length) {
@@ -1241,13 +1243,16 @@
           results[i] = await RootingOCR.recognize(files[i], (m) => {
             if (/loading|initializ/.test(m.status) && !doneN) busy(true, 'Προετοιμασία αναγνώρισης κειμένου…\n(μόνο την πρώτη φορά αργεί)');
             else if (files.length === 1 && m.status === 'recognizing text') busy(true, `Διαβάζω την εικόνα… ${Math.round((m.progress || 0) * 100)}%`);
-          }, slot);
+          }, slot % 2, useVision && !visionFail && visionUsage() < VISION_MONTH_LIMIT ? { key: S.settings.googleKey } : null);
+          if (results[i].via === 'google') { viaGoogle++; countVision(1); }
+          else if (results[i].visionError && !visionFail) visionFail = results[i].visionError; // μία αποτυχία -> οι υπόλοιπες στο κινητό
           doneN++;
           if (files.length > 1) busy(true, `Διαβάζω εικόνες… ${doneN}/${files.length}`);
         }
       };
       await Promise.all(Array.from({ length: lanes }, (_, k) => lane(k)));
       results.forEach(({ text, ambig }) => { perImage.push(RootingOCR.extractImage(text)); allAmbig.push(...ambig); });
+      if (visionFail) toast('Η ανάγνωση Google δεν δούλεψε (' + String(visionFail).slice(0, 80) + ') — διάβασα στο κινητό');
     } catch (err) {
       console.error(err);
       busy(false);
@@ -1478,6 +1483,12 @@
         <p class="muted small" id="sGInfo"></p>
         <p class="muted small">Αυτόν τον μήνα: <b>${googleUsage()}</b> / 10.000 αναζητήσεις · <b>${mapUsage()}</b> / 10.000 ανοίγματα χάρτη (δωρεάν). Στις 9.500 η εφαρμογή γυρνάει μόνη της στα δωρεάν, για να μη χρεωθείς.</p>
         ${S.settings.googleKey ? `
+        <div class="vision-box">
+          <label class="vision-row"><input id="sVision" type="checkbox" ${S.settings.visionOcr ? 'checked' : ''}> <span><b>Ανάγνωση screenshots με Google</b><br><small class="muted">Πιο ακριβής και γρήγορη. Τα screenshots στέλνονται στη Google για ανάγνωση.</small></span></label>
+          <p class="muted small">Αυτόν τον μήνα: <b>${visionUsage()}</b> / 1.000 εικόνες (δωρεάν). Στις 950 γυρνάει μόνη της στην ανάγνωση του κινητού.</p>
+          <button class="btn btn-ghost btn-block" id="sVisionTest">Δοκιμή ανάγνωσης Google</button>
+          <p class="muted small" id="sVisionInfo"></p>
+        </div>
         <label class="field" style="margin-top:10px"><span>Χάρτης</span>
           <select id="sMapEng"><option value="google">Google (περιστροφή, κίνηση)</option><option value="free">Δωρεάν (OpenStreetMap)</option></select></label>
         <label class="field"><span>Map ID (για περιστροφή/3D — προαιρετικό)</span>
@@ -1526,6 +1537,28 @@
           location.reload();
         } catch (e) { toast('Το αρχείο δεν είναι αντίγραφο ασφαλείας του Rooting'); }
       };
+      const vis = b.querySelector('#sVision');
+      if (vis) {
+        vis.onchange = () => { S.settings.visionOcr = vis.checked; save(); };
+        b.querySelector('#sVisionTest').onclick = async () => {
+          const vi = b.querySelector('#sVisionInfo');
+          vi.textContent = 'Δοκιμή…';
+          try {
+            // μικρή εικόνα με γνωστό κείμενο
+            const c = document.createElement('canvas'); c.width = 520; c.height = 120;
+            const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, 520, 120); x.fillStyle = '#000'; x.font = 'bold 44px sans-serif'; x.fillText('Δοκιμή 2468', 30, 78);
+            const t = await RootingOCR.visionRecognize(c.toDataURL('image/jpeg', 0.9).split(',')[1], S.settings.googleKey);
+            countVision(1);
+            if (/2468/.test(t)) { vi.innerHTML = '✅ Δουλεύει. Διάβασε: «' + esc(t.trim()) + '»'; if (!vis.checked) { vis.checked = true; S.settings.visionOcr = true; save(); } }
+            else vi.textContent = '⚠️ Απάντησε, αλλά διάβασε: «' + t.trim() + '»';
+          } catch (e) {
+            const m = String(e.message || e);
+            vi.textContent = '❌ ' + (/has not been used|disabled|not enabled|SERVICE_DISABLED/i.test(m) ? 'Το Cloud Vision API δεν είναι ενεργοποιημένο στον λογαριασμό σου (βήμα 1).'
+              : /blocked|not authorized|referer|API key not valid|restrict/i.test(m) ? 'Το κλειδί δεν επιτρέπει το Cloud Vision API (βήμα 2: περιορισμοί κλειδιού).'
+              : /billing/i.test(m) ? 'Χρειάζεται ενεργή χρέωση στον λογαριασμό Google Cloud.' : '') + ' [' + m.slice(0, 140) + ']';
+          }
+        };
+      }
       const sel = b.querySelector('#sNav');
       sel.value = S.settings.navApp;
       sel.onchange = () => { S.settings.navApp = sel.value; save(); render(); };
@@ -1889,6 +1922,11 @@
 
   // ---------- Επιλογή χάρτη ----------
   const MAP_MONTH_LIMIT = 9500;
+  // Ανάγνωση screenshots με Google (Cloud Vision): 1.000 δωρεάν εικόνες τον μήνα -> σταματάμε στις 950
+  const VISION_MONTH_LIMIT = 950;
+  function visionUsage() { const u = S.settings.visionUsage || {}; return u.month === monthKey() ? u.count : 0; }
+  function visionOn() { return !!S.settings.googleKey && !!S.settings.visionOcr && visionUsage() < VISION_MONTH_LIMIT; }
+  function countVision(n) { S.settings.visionUsage = { month: monthKey(), count: visionUsage() + (n || 1) }; save(); }
   function mapUsage() { const u = S.settings.mapUsage || {}; return u.month === monthKey() ? u.count : 0; }
   function useGoogleMap() { return !!S.settings.googleKey && S.settings.mapEngine !== 'free' && mapUsage() < MAP_MONTH_LIMIT && !googleAuthFailed; }
   async function startMap() {

@@ -83,8 +83,75 @@
     return out.join('\n');
   }
 
-  // Επιστρέφει { text, ambig: [{ read: '208', alt: '20B' }] }
-  async function recognize(file, onProgress, slot) {
+  // ---------- Ανάγνωση με Google Cloud Vision (προαιρετικά, με το κλειδί του χρήστη) ----------
+  // Ξαναχτίζει τις γραμμές από τις θέσεις των λέξεων (η σειρά των «παραγράφων» της Google δεν είναι πάντα πάνω->κάτω).
+  function visionLines(resp) {
+    const words = [];
+    const pages = (resp.fullTextAnnotation && resp.fullTextAnnotation.pages) || [];
+    pages.forEach((pg) => (pg.blocks || []).forEach((bl) => (bl.paragraphs || []).forEach((pa) => (pa.words || []).forEach((w) => {
+      const v = (w.boundingBox && w.boundingBox.vertices) || [];
+      if (v.length < 4) return;
+      const xs = v.map((q) => q.x || 0), ys = v.map((q) => q.y || 0);
+      const syms = w.symbols || [];
+      const last = syms[syms.length - 1];
+      const br = last && last.property && last.property.detectedBreak && last.property.detectedBreak.type;
+      words.push({ text: syms.map((x) => x.text).join(''), x0: Math.min(...xs), x1: Math.max(...xs), yc: (Math.min(...ys) + Math.max(...ys)) / 2, h: Math.max(4, Math.max(...ys) - Math.min(...ys)), sp: !!br });
+    }))));
+    words.sort((a, b) => a.yc - b.yc);
+    const lines = [];
+    words.forEach((w) => {
+      const l = lines.length ? lines[lines.length - 1] : null;
+      if (l && Math.abs(w.yc - l.yc) < 0.55 * Math.min(w.h, l.h)) { l.words.push(w); l.yc = (l.yc * (l.words.length - 1) + w.yc) / l.words.length; l.h = Math.max(l.h, w.h); }
+      else lines.push({ yc: w.yc, h: w.h, words: [w] });
+    });
+    return lines.map((l) => {
+      l.words.sort((a, b) => a.x0 - b.x0);
+      return l.words.map((w, i) => { const nx = l.words[i + 1]; return w.text + (nx && (w.sp || nx.x0 - w.x1 > 0.3 * l.h) ? ' ' : ''); }).join('');
+    }).join('\n');
+  }
+  // μικρότερο αρχείο για γρήγορο ανέβασμα (JPEG), αλλιώς το αρχικό
+  async function toBase64(file) {
+    try {
+      if (global.createImageBitmap && typeof document !== 'undefined') {
+        const bmp = await createImageBitmap(file);
+        const k = Math.min(1, 2200 / Math.max(bmp.width, bmp.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+        c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+        return c.toDataURL('image/jpeg', 0.9).split(',')[1];
+      }
+    } catch (e) { /* πέφτουμε στο αρχικό αρχείο */ }
+    const buf = new Uint8Array(await file.arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+    return btoa(bin);
+  }
+  async function visionRecognize(file, key) {
+    const content = typeof file === 'string' ? file : await toBase64(file);
+    const r = await fetch('https://vision.googleapis.com/v1/images:annotate?key=' + encodeURIComponent(key), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requests: [{ image: { content }, features: [{ type: 'DOCUMENT_TEXT_DETECTION' }], imageContext: { languageHints: ['el', 'en'] } }] })
+    });
+    const j = await r.json().catch(() => ({}));
+    const err = (j.error && j.error.message) || (j.responses && j.responses[0] && j.responses[0].error && j.responses[0].error.message);
+    if (!r.ok || err) throw new Error(err || ('HTTP ' + r.status));
+    const resp = (j.responses && j.responses[0]) || {};
+    return visionLines(resp) || (resp.fullTextAnnotation && resp.fullTextAnnotation.text) || '';
+  }
+
+  // Επιστρέφει { text, ambig: [{ read: '208', alt: '20B' }], via: 'google' | 'device', visionError }
+  //   vision = { key } -> πρώτα Google· αν αποτύχει, ανάγνωση στο κινητό όπως πριν
+  async function recognize(file, onProgress, slot, vision) {
+    let visionError = null;
+    if (vision && vision.key) {
+      try { return { text: await visionRecognize(file, vision.key), ambig: [], via: 'google' }; }
+      catch (e) { visionError = e.message || String(e); }
+    }
+    const res = await recognizeDevice(file, onProgress, slot);
+    res.via = 'device'; res.visionError = visionError;
+    return res;
+  }
+  async function recognizeDevice(file, onProgress, slot) {
     const w = await getWorker(onProgress, slot);
     const r = await w.recognize(file, {}, { text: true, blocks: true });
     let text = (r.data && r.data.text) || '';
@@ -530,7 +597,7 @@
     return groups.concat(hubs);
   }
 
-  const api = { recognize, extract, extractImage, key, tidyAddress, mergeAcross, applyAmbig, fixAreas, groupCards, addrKey, codesOverlap, normCode };
+  const api = { visionRecognize, _visionLines: visionLines, recognize, extract, extractImage, key, tidyAddress, mergeAcross, applyAmbig, fixAreas, groupCards, addrKey, codesOverlap, normCode };
   global.RootingOCR = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
