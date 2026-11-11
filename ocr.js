@@ -433,8 +433,11 @@
       // ο ίδιος κωδικός (σχεδόν): πολλοί κωδικοί μοιάζουν (ίδια αρχή «94GOEO…»), γι' αυτό με μικρή διαφορά
       // ζητάμε και ίδιο όνομα ή ίδια διεύθυνση
       const close = (u) => (u.codes || []).some((a) => c.some((b) => lev(a, b) <= 1));
-      const same = c.length ? uniq.find((u) => u.img !== it.img && (u.codes || []).length && codesOverlap(u.codes, c) &&
-        (close(u) || nameKey(u.name) === nameKey(it.name) || addrKey(u.address) === addrKey(it.address))) : null;
+      // το τηλέφωνο διαβάζεται σχεδόν πάντα σωστά: διαφορετικό τηλέφωνο = σίγουρα άλλη καρτέλα
+      const phoneDiff = (u) => u.phone && it.phone && u.phone !== it.phone;
+      const samePhone = (u) => u.phone && it.phone && u.phone === it.phone;
+      const same = c.length ? uniq.find((u) => u.img !== it.img && (u.codes || []).length && codesOverlap(u.codes, c) && !phoneDiff(u) &&
+        (close(u) || samePhone(u) || nameKey(u.name) === nameKey(it.name) || addrKey(u.address) === addrKey(it.address))) : null;
       if (!same) { uniq.push(Object.assign({}, it)); return; }
       const keep = better(same, it) === it ? Object.assign(same, { address: it.address }) : same;
       if ((it.name || '').length > (keep.name || '').length && nameKey(it.name).includes(nameKey(keep.name).slice(0, 6))) keep.name = it.name;
@@ -466,6 +469,7 @@
       }
       // είναι η ίδια καρτέλα (επικάλυψη screenshots);
       const dup = g.people.find((p) => p.img !== person.img && nameKey(p.name) === nameKey(person.name) &&
+        !(p.phone && person.phone && p.phone !== person.phone) &&
         (!p.codes.length || !person.codes.length || codesOverlap(p.codes, person.codes)));
       if (dup) {
         dup.phone = dup.phone || person.phone;
