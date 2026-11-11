@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '46';
+  const APP_VERSION = '47';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -185,8 +185,52 @@
   function countGoogle() {
     S.settings.googleUsage = { month: monthKey(), count: googleUsage() + 1 };
     save();
+    warn80('geo');
   }
-  function googleEnabled() { return !!S.settings.googleKey && googleUsage() < GOOGLE_MONTH_LIMIT; }
+  function googleEnabled() { return !!S.settings.googleKey && (googleUsage() < GOOGLE_MONTH_LIMIT || paidChoice('geo') === 'paid'); }
+
+  // ---------- Δικλείδα χρέωσης ----------
+  // Κάθε υπηρεσία της Google έχει δωρεάν μηνιαίο όριο. Στο 80% προειδοποιούμε· στο όριο ρωτάμε ΜΙΑ φορά
+  // τον χρήστη: «συνέχεια με τα δωρεάν» (προεπιλογή) ή «συνέχεια με Google (χρέωση)». Η επιλογή ισχύει ως το τέλος του μήνα.
+  const METERS = {
+    geo: { name: 'αναζητήσεις διευθύνσεων', free: 10000, limit: () => GOOGLE_MONTH_LIMIT, used: () => googleUsage(), price: 'περίπου 5 $ ανά 1.000 αναζητήσεις', alt: 'τη δωρεάν αναζήτηση (λιγότερο ακριβής)' },
+    map: { name: 'ανοίγματα χάρτη', free: 10000, limit: () => MAP_MONTH_LIMIT, used: () => mapUsage(), price: 'περίπου 7 $ ανά 1.000 ανοίγματα', alt: 'τον δωρεάν χάρτη (χωρίς περιστροφή/κίνηση)' },
+    vision: { name: 'εικόνες για ανάγνωση', free: 1000, limit: () => VISION_MONTH_LIMIT, used: () => visionUsage(), price: 'περίπου 1,50 $ ανά 1.000 εικόνες', alt: 'την ανάγνωση στο κινητό (όπως παλιά)' }
+  };
+  function paidState() { const p = S.settings.paid || {}; return p.month === monthKey() ? p : { month: monthKey() }; }
+  function paidChoice(kind) { return paidState()[kind] || ''; } // '' | 'free' | 'paid'
+  function setPaid(kind, v) { const p = paidState(); if (v) p[kind] = v; else delete p[kind]; S.settings.paid = p; save(); }
+  function warn80(kind) {
+    const m = METERS[kind], p = paidState();
+    if (m.used() < m.free * 0.8 || p['w' + kind]) return;
+    p['w' + kind] = 1; S.settings.paid = p; save();
+    setTimeout(() => toast(`Προσοχή: ${m.used().toLocaleString('el-GR')} από τις ${m.free.toLocaleString('el-GR')} δωρεάν ${m.name} αυτόν τον μήνα`), 400);
+  }
+  const askingPaid = {};
+  // Επιστρέφει true αν επιτρέπεται η χρήση της Google για αυτή την υπηρεσία (ρωτάει όταν φτάσει το όριο)
+  function paidGate(kind) {
+    const m = METERS[kind];
+    if (!S.settings.googleKey) return Promise.resolve(false);
+    if (m.used() < m.limit()) return Promise.resolve(true);
+    const c = paidChoice(kind);
+    if (c) return Promise.resolve(c === 'paid');
+    if (!askingPaid[kind]) askingPaid[kind] = new Promise((resolve) => {
+      const d = document.createElement('div');
+      d.className = 'paid-ask';
+      d.innerHTML = `<div class="paid-box">
+        <h3>${ic('alert')} Τέλος δωρεάν ορίου</h3>
+        <p>Έφτασες τις <b>${m.used().toLocaleString('el-GR')}</b> από τις ${m.free.toLocaleString('el-GR')} δωρεάν <b>${m.name}</b> της Google για αυτόν τον μήνα.</p>
+        <button class="btn btn-primary btn-block" data-v="free">Συνέχεια ΔΩΡΕΑΝ<small>με ${m.alt}</small></button>
+        <button class="btn btn-ghost btn-block paid-yes" data-v="paid">Συνέχεια με Google — θα χρεωθώ<small>${m.price} (δες τις τρέχουσες τιμές στη Google)</small></button>
+        <p class="muted small">Η επιλογή ισχύει ως το τέλος του μήνα. Την αλλάζεις από τις Ρυθμίσεις.</p></div>`;
+      document.body.appendChild(d);
+      d.querySelectorAll('button').forEach((bt) => { bt.onclick = () => {
+        if (bt.dataset.v === 'paid' && !confirm('Σίγουρα; Από εδώ και πέρα κάθε χρήση αυτόν τον μήνα θα χρεώνεται στον λογαριασμό σου Google.')) return;
+        setPaid(kind, bt.dataset.v); d.remove(); delete askingPaid[kind]; resolve(bt.dataset.v === 'paid');
+      }; });
+    });
+    return askingPaid[kind];
+  }
 
   // Φορτώνει μία φορά τη βιβλιοθήκη Google (χάρτης + αναζήτηση). Αλλαγή κλειδιού -> επαναφόρτωση σελίδας.
   let googleAuthFailed = false;
@@ -303,7 +347,7 @@
   }
   async function geocodeSmart0(q, region) {
     // Με κλειδί Google: πρώτα Google (1 αίτημα), και μόνο αν δεν βρει, τα δωρεάν
-    if (googleEnabled()) {
+    if (await paidGate('geo')) {
       try {
         const near = region || searchBias();
         // σημεία αναφοράς: η περιοχή του γύρου, η θέση μου, το κέντρο των στάσεων
@@ -1233,6 +1277,7 @@
       // 2 screenshots ταυτόχρονα (όταν είναι 3+), η σειρά διατηρείται για την ένωση κομμένων καρτελών
       const results = new Array(files.length);
       let nextIdx = 0, doneN = 0;
+      if (S.settings.googleKey && S.settings.visionOcr) await paidGate('vision');
       const useVision = visionOn();
       let visionFail = null, viaGoogle = 0;
       const lanes = useVision ? Math.min(4, files.length) : (files.length >= 3 ? 2 : 1);
@@ -1243,7 +1288,7 @@
           results[i] = await RootingOCR.recognize(files[i], (m) => {
             if (/loading|initializ/.test(m.status) && !doneN) busy(true, 'Προετοιμασία αναγνώρισης κειμένου…\n(μόνο την πρώτη φορά αργεί)');
             else if (files.length === 1 && m.status === 'recognizing text') busy(true, `Διαβάζω την εικόνα… ${Math.round((m.progress || 0) * 100)}%`);
-          }, slot % 2, useVision && !visionFail && visionUsage() < VISION_MONTH_LIMIT ? { key: S.settings.googleKey } : null);
+          }, slot % 2, useVision && !visionFail && visionOn() ? { key: S.settings.googleKey } : null);
           if (results[i].via === 'google') { viaGoogle++; countVision(1); }
           else if (results[i].visionError && !visionFail) visionFail = results[i].visionError; // μία αποτυχία -> οι υπόλοιπες στο κινητό
           doneN++;
@@ -1481,6 +1526,9 @@
           <button class="btn btn-ghost" id="sGDel">Αφαίρεση</button>
         </div>
         <p class="muted small" id="sGInfo"></p>
+        <div class="paid-status">${ic('alert')} <b>Δικλείδα χρέωσης:</b> στο 80% του δωρεάν ορίου σε προειδοποιώ, και στο όριο σε ρωτάω αν θες να συνεχίσεις δωρεάν ή με χρέωση.
+          ${['geo', 'map', 'vision'].filter((k) => paidChoice(k)).map((k) => `<br>• ${METERS[k].name}: <b class="${paidChoice(k) === 'paid' ? 'fail-txt' : 'ok-txt'}">${paidChoice(k) === 'paid' ? 'συνεχίζω ΜΕ ΧΡΕΩΣΗ' : 'συνεχίζω δωρεάν'}</b> ως το τέλος του μήνα`).join('')}
+          ${['geo', 'map', 'vision'].some((k) => paidChoice(k)) ? '<br><button class="btn btn-ghost" id="sPaidReset" style="margin-top:6px">Αλλαγή επιλογής (θα με ξαναρωτήσει)</button>' : ''}</div>
         <p class="muted small">Αυτόν τον μήνα: <b>${googleUsage()}</b> / 10.000 αναζητήσεις · <b>${mapUsage()}</b> / 10.000 ανοίγματα χάρτη (δωρεάν). Στις 9.500 η εφαρμογή γυρνάει μόνη της στα δωρεάν, για να μη χρεωθείς.</p>
         ${S.settings.googleKey ? `
         <div class="vision-box">
@@ -1537,6 +1585,8 @@
           location.reload();
         } catch (e) { toast('Το αρχείο δεν είναι αντίγραφο ασφαλείας του Rooting'); }
       };
+      const pr = b.querySelector('#sPaidReset');
+      if (pr) pr.onclick = () => { ['geo', 'map', 'vision'].forEach((k) => setPaid(k, '')); toast('Εντάξει — θα σε ξαναρωτήσω στο όριο'); openSettings(false); };
       const vis = b.querySelector('#sVision');
       if (vis) {
         vis.onchange = () => { S.settings.visionOcr = vis.checked; save(); };
@@ -1925,18 +1975,19 @@
   // Ανάγνωση screenshots με Google (Cloud Vision): 1.000 δωρεάν εικόνες τον μήνα -> σταματάμε στις 950
   const VISION_MONTH_LIMIT = 950;
   function visionUsage() { const u = S.settings.visionUsage || {}; return u.month === monthKey() ? u.count : 0; }
-  function visionOn() { return !!S.settings.googleKey && !!S.settings.visionOcr && visionUsage() < VISION_MONTH_LIMIT; }
-  function countVision(n) { S.settings.visionUsage = { month: monthKey(), count: visionUsage() + (n || 1) }; save(); }
+  function visionOn() { return !!S.settings.googleKey && !!S.settings.visionOcr && (visionUsage() < VISION_MONTH_LIMIT || paidChoice('vision') === 'paid'); }
+  function countVision(n) { S.settings.visionUsage = { month: monthKey(), count: visionUsage() + (n || 1) }; save(); warn80('vision'); }
   function mapUsage() { const u = S.settings.mapUsage || {}; return u.month === monthKey() ? u.count : 0; }
-  function useGoogleMap() { return !!S.settings.googleKey && S.settings.mapEngine !== 'free' && mapUsage() < MAP_MONTH_LIMIT && !googleAuthFailed; }
+  function useGoogleMap() { return !!S.settings.googleKey && S.settings.mapEngine !== 'free' && (mapUsage() < MAP_MONTH_LIMIT || paidChoice('map') === 'paid') && !googleAuthFailed; }
   async function startMap() {
     const el = $('map');
     const center = myPos || S.lastPos || (S.stops[0] ? { lat: S.stops[0].lat, lng: S.stops[0].lng } : (S.start || DEFAULT_CENTER));
+    if (S.settings.googleKey && S.settings.mapEngine !== 'free' && !googleAuthFailed) await paidGate('map');
     if (useGoogleMap()) {
       try {
         await loadGoogleCore();
         mv = await RootingMapView.createGoogle(el, center, S.settings.googleMapId, googleScheme());
-        S.settings.mapUsage = { month: monthKey(), count: mapUsage() + 1 }; save();
+        S.settings.mapUsage = { month: monthKey(), count: mapUsage() + 1 }; save(); warn80('map');
       } catch (e) { console.warn('Google map', e); mv = null; el.innerHTML = ''; }
     }
     if (!mv) mv = RootingMapView.createLeaflet(el, center);

@@ -585,3 +585,16 @@ body.navigating .modal { z-index: 1100; }
 .vision-row input { width: 22px; height: 22px; flex: none; margin-top: 2px; }
 
 #sVisionInfo, #sGInfo { overflow-wrap: anywhere; }
+
+/* ---- Δικλείδα χρέωσης ---- */
+.paid-ask { position: fixed; inset: 0; z-index: 1300; background: rgba(0,0,0,.6); display: grid; place-items: center; padding: 18px; }
+.paid-box { background: var(--card); color: var(--text); border-radius: 18px; padding: 18px; max-width: 420px; width: 100%; box-shadow: 0 12px 40px rgba(0,0,0,.4); }
+.paid-box h3 { margin: 0 0 8px; font-size: 19px; color: #d97706; display: flex; align-items: center; gap: 8px; }
+.paid-box p { margin: 0 0 12px; }
+.paid-box .btn { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; padding: 12px; height: auto; }
+.paid-box .btn small { font-weight: 400; font-size: 12.5px; opacity: .85; }
+.paid-box .paid-yes { color: var(--danger); border: 1px solid var(--danger); }
+.paid-status { margin-top: 10px; padding: 10px; border-radius: 10px; background: var(--bg); font-size: 13.5px; color: var(--muted); }
+.paid-status .ic { width: 14px; height: 14px; vertical-align: -2px; color: #d97706; }
+
+.toast { z-index: 1250; }
