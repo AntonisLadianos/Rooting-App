@@ -611,3 +611,8 @@ body.navigating .modal { z-index: 1100; }
 .place-go .ic { width: 16px; height: 16px; color: var(--primary); }
 .place-del { color: var(--muted) !important; border-left: 1px solid var(--line) !important; }
 .suggestions li.muted { color: var(--muted); cursor: default; }
+
+/* ---- Προτεραιότητα στάσης ---- */
+.prio-seg { margin-top: 4px; }
+.prio-seg button { font-size: 14.5px; padding: 9px 2px; }
+.prio-badge { background: #1e40af; color: #fff; border-radius: 7px; padding: 1px 7px; font-size: 12px; }

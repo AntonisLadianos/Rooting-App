@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '52';
+  const APP_VERSION = '53';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -514,7 +514,7 @@
     if (S.endMode === 'fixed' && S.end) seq.push(S.end);
     else if (S.endMode === 'cycle' && (S.start || S.route.origin)) seq.push(S.start || S.route.origin);
     let geometry, legs, approx = false;
-    try { const g = await getRouteGeometry(seq); geometry = g.geometry; legs = g.legs; }
+    try { const g = await getRouteGeometry(seq); geometry = g.geometry; legs = applyWalkLegs(seq, g.legs); }
     catch (e) {
       approx = true; geometry = seq.map((p) => [p.lat, p.lng]); legs = [];
       for (let i = 0; i < seq.length - 1; i++) { const d = haversine(seq[i], seq[i + 1]) * 1.3; legs.push({ distance: d, duration: d / 8.3 }); }
@@ -576,6 +576,7 @@
       const eta = etas[s.id];
       const meta = [];
       if (eta && !s.done) meta.push(`${ic('clock')} ${fmtClock(eta.at)}`, `${fmtKm(eta.leg.distance)} · ${fmtDur(eta.leg.duration)}`);
+      if (s.prio && !s.done) meta.push(`<b class="prio-badge">${s.prio === 'first' ? 'πρώτα' : 'τελευταία'}</b>`);
       if (s.exact === false && !s.done) meta.push(`<b class="approx">${ic('alert')} κατά προσέγγιση</b>`);
       if (s.pkgs > 1) meta.push(`<b class="pkg-inline">${ic('package')} ${pkgsText(s.pkgs)}</b>`);
       if (whoText(s)) meta.push(`${ic(s.hub ? 'home' : 'user')} ${esc(whoText(s))}`);
@@ -1049,6 +1050,12 @@
       </div>
       ${!s.done ? `<button class="btn btn-fail btn-block" id="mFail">${ic('x')} Αποτυχία παράδοσης</button>` : ''}
       ${s.failed ? '<p class="fail-txt small">✗ Αποτυχημένη παράδοση — εκτός δρομολογίου. Πάτα «Επαναφορά» για να μπει ξανά.</p>' : ''}
+      ${!s.done ? `<div class="field"><span>Θέση στη σειρά (ισχύει στην επόμενη βελτιστοποίηση)</span>
+        <div class="mm-seg prio-seg" id="mPrio">
+          <button data-p="first" class="${s.prio === 'first' ? 'on' : ''}">Πρώτα</button>
+          <button data-p="" class="${!s.prio ? 'on' : ''}">Κανονικά</button>
+          <button data-p="last" class="${s.prio === 'last' ? 'on' : ''}">Τελευταία</button>
+        </div></div>` : ''}
       <label class="field"><span>Σημείωση</span><input id="mNote" type="text" value="${esc(s.note)}" placeholder="π.χ. 3ος όροφος, κουδούνι Παπαδόπουλος"></label>
       <label class="field"><span>Τηλέφωνο</span><input id="mPhone" type="tel" value="${esc(s.phone)}" placeholder="69…"></label>
       ${s.phone ? `<a class="btn btn-ghost btn-block" href="tel:${esc(s.phone.replace(/\s/g, ''))}">${ic('phone')} Κλήση ${esc(s.phone)}</a>` : ''}
@@ -1068,6 +1075,12 @@
       b.querySelector('#mDown').onclick = () => { persist(); moveStop(s.id, 1); };
       b.querySelector('#mDel').onclick = () => { deleteStop(s.id, true); closeModal(); };
       b.querySelector('#mFix').onclick = () => { persist(); fixStopPlace(s.id); };
+      b.querySelectorAll('#mPrio button').forEach((bt) => { bt.onclick = () => {
+        if (bt.dataset.p) s.prio = bt.dataset.p; else delete s.prio;
+        save(); render();
+        b.querySelectorAll('#mPrio button').forEach((x) => x.classList.toggle('on', x === bt));
+        if (S.route) toast('Πάτα «Νέα σειρά» (ή «Από εδώ») για να ισχύσει');
+      }; });
     });
   }
 
@@ -1771,6 +1784,40 @@
     };
   }
 
+  // ---------- Τι λαμβάνει υπόψη η σειρά, πέρα από τον χρόνο οδήγησης ----------
+  // (α) Περπάτημα: δύο σημεία σε απόσταση ως WALK_M μέτρα -> αν με τα πόδια είναι πιο γρήγορα από τον
+  //     γύρο με το αυτοκίνητο (μονόδρομοι, διαχωριστικό), μετράει ο χρόνος με τα πόδια.
+  const WALK_M = 80, WALK_SPEED = 1.1; // μέτρα, μέτρα/δευτερόλεπτο
+  function walkSec(a, b) { const d = haversine(a, b); return d <= WALK_M ? (d * 1.2) / WALK_SPEED : Infinity; }
+  function applyWalkMatrix(D, points) {
+    for (let i = 1; i < points.length; i++) for (let j = 1; j < points.length; j++) {
+      if (i === j) continue;
+      const w = walkSec(points[i], points[j]);
+      if (w < D[i][j]) D[i][j] = w;
+    }
+  }
+  // το ίδιο για τους χρόνους/αποστάσεις που δείχνουμε (η γραμμή στον χάρτη μένει η διαδρομή του αυτοκινήτου)
+  function applyWalkLegs(seq, legs) {
+    if (!legs) return legs;
+    for (let k = 1; k < seq.length - 0 && k - 1 < legs.length; k++) {
+      if (k - 1 === 0) continue; // από την αφετηρία οδηγούμε πάντα
+      const w = walkSec(seq[k - 1], seq[k]);
+      if (legs[k - 1] && w < legs[k - 1].duration) legs[k - 1] = { duration: w, distance: haversine(seq[k - 1], seq[k]) * 1.2 };
+    }
+    return legs;
+  }
+  // (β) Προτεραιότητα: στάσεις «πρώτα» μπαίνουν πριν από όλες τις άλλες, «τελευταία» μετά από όλες.
+  const PRIO_PENALTY = 1e7;
+  function prioGroup(st) { return st && st.prio === 'first' ? 0 : (st && st.prio === 'last' ? 2 : 1); }
+  function applyPrioMatrix(D, points, nStops) {
+    const g = (i) => prioGroup(points[i]);
+    const lowest = Math.min(...Array.from({ length: nStops }, (_, k) => g(k + 1)));
+    for (let i = 1; i <= nStops; i++) {
+      if (g(i) > lowest) D[0][i] += PRIO_PENALTY;                       // η πρώτη στάση πρέπει να είναι από την πρώτη ομάδα
+      for (let j = 1; j <= nStops; j++) if (i !== j && g(j) < g(i)) D[i][j] += PRIO_PENALTY; // ποτέ πίσω σε προηγούμενη ομάδα
+    }
+  }
+
   async function optimize() {
     const todo = orderedStops().filter((s) => !s.done);
     const doneList = orderedStops().filter((s) => s.done);
@@ -1804,8 +1851,15 @@
       const { D, approx } = await getMatrix(points);
       busy(true, 'Βρίσκω την καλύτερη σειρά…');
       await new Promise((r) => setTimeout(r, 30));
+      applyWalkMatrix(D, points);
+      const hasPrio = todo.some((x) => x.prio);
+      if (hasPrio) applyPrioMatrix(D, points, todo.length);
       const orderIdx = solveRoute(D, realMode, { timeLimitMs: todo.length > 40 ? 3000 : 1500 });
-      const orderedTodo = orderIdx.map((i) => points[i]);
+      let orderedTodo = orderIdx.map((i) => points[i]);
+      // δικλείδα: αν παρ' όλα αυτά κάτι βγήκε εκτός ομάδας, το ταξινομούμε (σταθερά) ανά ομάδα
+      if (hasPrio && orderedTodo.some((x, k) => k && prioGroup(x) < prioGroup(orderedTodo[k - 1]))) {
+        orderedTodo = orderedTodo.map((x, k) => ({ x, k })).sort((a, b) => (prioGroup(a.x) - prioGroup(b.x)) || (a.k - b.k)).map((o) => o.x);
+      }
 
       const seq = [origin, ...orderedTodo];
       if (realMode === 'fixed') seq.push(points[points.length - 1]);
@@ -1815,7 +1869,7 @@
       busy(true, 'Σχεδιάζω τη διαδρομή…');
       try {
         const g = await getRouteGeometry(seq);
-        geometry = g.geometry; legs = g.legs;
+        geometry = g.geometry; legs = applyWalkLegs(seq, g.legs);
       } catch (e) {
         approxGeom = true;
         geometry = seq.map((p) => [p.lat, p.lng]);
