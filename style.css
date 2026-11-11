@@ -539,3 +539,15 @@ body.navigating .modal { z-index: 1100; }
 .stop .num.num-locker { background: #7c3aed; border-radius: 9px; }
 .stop .num.num-clever { background: #0891b2; border-radius: 9px; }
 .stop.current .num.num-locker, .stop.current .num.num-clever { background: var(--next); }
+
+/* ---- Στάσεις στο ίδιο σημείο / κατά προσέγγιση ---- */
+.pin.pin-multi { width: auto; min-width: 30px; padding: 0 8px; border-radius: 15px; white-space: nowrap; }
+.pin-multi:not(.pin-next) { background: #1e40af; }
+.approx { color: #d97706; font-weight: 700; }
+.approx .ic { width: 13px; height: 13px; vertical-align: -2px; }
+.group-list { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.grp-item { display: flex !important; align-items: center; gap: 12px; text-align: left; justify-content: flex-start; }
+.grp-item .num { flex: none; width: 30px; height: 30px; border-radius: 50%; background: var(--primary); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 13px; }
+.grp-txt { display: flex; flex-direction: column; min-width: 0; }
+.grp-txt small { color: var(--muted); font-weight: 400; }
+.grp-txt small.approx { color: #d97706; font-weight: 600; }

@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '36';
+  const APP_VERSION = '37';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -238,7 +238,7 @@
       label: r.formatted_address.replace(/,\s*(Ελλάδα|Greece)$/i, ''),
       lat: typeof loc.lat === 'function' ? loc.lat() : loc.lat,
       lng: typeof loc.lng === 'function' ? loc.lng() : loc.lng,
-      exact, query: q, google: true, comps: r.address_components
+      exact, query: q, google: true, comps: r.address_components, types: r.types || []
     };
   }
 
@@ -251,7 +251,28 @@
   }
 
   // region: {lat, lng} -> αναζήτηση μόνο γύρω από εκεί (~35 χλμ), και με σκέτο όνομα δρόμου
-  async function geocodeSmart(q, region) {
+  // Αποτέλεσμα Google που είναι μόνο περιοχή/ΤΚ (π.χ. «71601», «Νέα Αλικαρνασσός»): το σημείο είναι
+  // το κέντρο της περιοχής, όχι η διεύθυνση — ΔΕΝ το δεχόμαστε για διεύθυνση με οδό
+  const STREET_TYPES = ['street_address', 'premise', 'subpremise', 'establishment', 'point_of_interest', 'route', 'intersection', 'street_number'];
+  function coarse(g) { return !!(g && g.google && !(g.types || []).some((t) => STREET_TYPES.includes(t))); }
+  function hasStreetNo(q) { const f = String(q).split(',')[0]; return /\p{L}{3,}/u.test(f) && /\d/.test(f.replace(/\b\d{3}\s?\d{2}\b/, '')); }
+  // καθάρισμα σκουπιδιών από την ανάγνωση: «ΑΝΑΠΑΥΎΣΕΩΣ 31 ΝΕΑ ΑΛΙΚΑΡΝΑΣΣΟΣ I» -> «ΑΝΑΠΑΥΣΕΩΣ 31, ΝΕΑ ΑΛΙΚΑΡΝΑΣΣΟΣ»
+  function cleanQuery(q) {
+    return String(q)
+      .replace(/[\p{Lu}]+/gu, (w) => w.normalize('NFD').replace(/[\u0300-\u036f]/g, '').normalize('NFC')) // τόνοι σε ΚΕΦΑΛΑΙΑ
+      .replace(/ΥΥ/g, 'Υ')                                     // «ΑΝΑΠΑΥΎΣΕΩΣ»
+      .replace(/(^|,|(?<!\d)\s)[\p{L}](?=[\s,]|$)/gu, '$1')  // μονά γράμματα «I», «ο» (όχι «20 Β»)
+      .replace(/(^|,)\s*0\s*(?=,|$)/g, '$1').replace(/\s0(?=\s*,)/g, '') // «Νεα αλικαρνασσος 0,»
+      .replace(/\s+,/g, ',').replace(/,\s*,/g, ',').replace(/\s+/g, ' ').replace(/^[,\s]+|[,\s]+$/g, '').trim();
+  }
+  async function geocodeSmart(qIn, region) {
+    const q = cleanQuery(qIn) || qIn;
+    const r = await geocodeSmart0(q, region);
+    if (r) r.query = qIn;
+    if (rejected.has(q) && q !== qIn) { rejected.set(qIn, rejected.get(q)); rejected.delete(q); }
+    return r;
+  }
+  async function geocodeSmart0(q, region) {
     // Με κλειδί Google: πρώτα Google (1 αίτημα), και μόνο αν δεν βρει, τα δωρεάν
     if (googleEnabled()) {
       try {
@@ -259,7 +280,8 @@
         // σημεία αναφοράς: η περιοχή του γύρου, η θέση μου, το κέντρο των στάσεων
         const refs = [region, myPos, stopsCenter()].filter(Boolean);
         const dist = (g) => Math.min(...refs.map((r) => RootingGeo.distKm(r, g)), refs.length ? Infinity : 0);
-        const ok = (g) => g && RootingGeo.googleMatches(q, g.comps, dist(g) < 60, g.label) && (!region || RootingGeo.distKm(region, g) < 50);
+        const needStreet = hasStreetNo(q);
+        const ok = (g) => g && !(needStreet && coarse(g)) && RootingGeo.googleMatches(q, g.comps, dist(g) < 60, g.label) && (!region || RootingGeo.distKm(region, g) < 50);
         let g = await googleGeocode(q, near);
         if (ok(g)) return g;
         const first = g;
@@ -279,8 +301,8 @@
             if (ok(g)) return g;
           }
           // πολύ κοντά στις άλλες στάσεις (<12 χλμ): σχεδόν σίγουρα σωστό
-          if (refs.length && dist(first) < 12) return first;
-          rejected.set(q, first); // κρατάμε την πρόταση της Google για να τη δει ο χρήστης
+          if (refs.length && dist(first) < 12 && !(needStreet && coarse(first))) return first;
+          if (!coarse(first)) rejected.set(q, first); // κρατάμε την πρόταση της Google για να τη δει ο χρήστης
         }
       } catch (e) { /* συνεχίζουμε με τα δωρεάν */ }
     }
@@ -481,6 +503,7 @@
       const eta = etas[s.id];
       const meta = [];
       if (eta && !s.done) meta.push(`${ic('clock')} ${fmtClock(eta.at)}`, `${fmtKm(eta.leg.distance)} · ${fmtDur(eta.leg.duration)}`);
+      if (s.exact === false && !s.done) meta.push(`<b class="approx">${ic('alert')} κατά προσέγγιση</b>`);
       if (s.pkgs > 1) meta.push(`<b class="pkg-inline">${ic('package')} ${pkgsText(s.pkgs)}</b>`);
       if (whoText(s)) meta.push(`${ic(s.hub ? 'home' : 'user')} ${esc(whoText(s))}`);
       if (s.note) meta.push(`${ic('note')} ${esc(s.note)}`);
@@ -581,12 +604,28 @@
     const items = [];
     const origin = S.route && S.route.origin ? S.route.origin : S.start;
     if (origin) items.push({ lat: origin.lat, lng: origin.lng, text: '▶', cls: 'pin-start', title: 'Αφετηρία', z: 2 });
+    const pend = [];
     list.forEach((s, i) => {
       const isNext = nextStop && nextStop.id === s.id;
-      items.push({
+      const it = {
         lat: s.lat, lng: s.lng, text: s.failed ? '✗' : (s.done ? '✓' : (S.route ? String(i + 1) : '•')),
         cls: s.failed ? 'pin-failed' : (s.done ? 'pin-done' : (isNext ? 'pin-next' : (s.hub ? 'pin-hub pin-' + s.hub.kind : ''))), title: title(s),
         z: isNext ? 50 : (s.done ? 1 : 10), onClick: () => stopPopup(s.id)
+      };
+      if (s.done) items.push(it); else pend.push({ it, s, i, isNext });
+    });
+    // στάσεις στο ίδιο σημείο (<15 μ): μία πινέζα «5–7» αντί για πινέζες η μία πάνω στην άλλη
+    const groups = [];
+    pend.forEach((p) => { const g = groups.find((x) => RootingGeo.distKm(x[0].s, p.s) < 0.015); if (g) g.push(p); else groups.push([p]); });
+    groups.forEach((g) => {
+      if (g.length === 1) { items.push(g[0].it); return; }
+      const nums = g.map((p) => p.i + 1);
+      const seq = nums.every((n, k) => !k || n === nums[k - 1] + 1);
+      const nx = g.find((p) => p.isNext);
+      items.push({
+        lat: g[0].s.lat, lng: g[0].s.lng, text: S.route ? (seq && nums.length > 2 ? nums[0] + '–' + nums[nums.length - 1] : nums.join('·')) : '×' + g.length,
+        cls: (nx ? 'pin-next ' : '') + 'pin-multi', title: g.map((p) => title(p.s)).join(' / '), z: nx ? 50 : 10,
+        onClick: () => groupPopup(g.map((p) => p.s.id))
       });
     });
     if (S.endMode === 'fixed' && S.end) items.push({ lat: S.end.lat, lng: S.end.lng, text: '■', cls: 'pin-end', title: 'Τέλος', z: 2 });
@@ -929,7 +968,8 @@
       <p class="stop-full">${esc(title(s))}</p>
       ${s.pkgs ? `<p class="pkg-line"><b class="pkg-badge${s.pkgs > 1 ? ' multi' : ''}">${ic('package')} ${pkgsText(s.pkgs)}</b></p>` : ''}
       ${(s.people || []).length ? `<ul class="people">${s.people.map((p) => `<li><span>${ic('user')} ${esc(p.name || '—')}${(p.pkgs || 1) > 1 || s.people.length > 1 ? ` <b>· ${pkgsText(p.pkgs || 1)}</b>` : ''}</span>${p.phone ? `<a class="btn btn-ghost" href="tel:${esc(p.phone.replace(/\s/g, ''))}">${ic('phone')} ${esc(p.phone)}</a>` : ''}</li>`).join('')}</ul>` : ''}
-      ${s.orig ? `<p class="muted small">Στον χάρτη: ${esc(s.label)}${s.exact === false ? ' (βρέθηκε μόνο ο δρόμος — η πλοήγηση θα ψάξει τον ακριβή αριθμό)' : ''}</p>` : ''}
+      ${s.orig ? `<p class="muted small">Στον χάρτη: ${esc(s.label)}${s.exact === false ? ' <b class="approx">(κατά προσέγγιση — δεν βρέθηκε ο ακριβής αριθμός)</b>' : ''}</p>` : ''}
+      <button class="btn btn-ghost btn-block" id="mFix">${ic('locate')} Λάθος θέση; Διόρθωση</button>
       <div class="grid2">
         <a class="btn btn-primary" id="mNav" href="${esc(navUrl(s))}"${navUrl(s).startsWith('http') ? ' target="_blank" rel="noopener"' : ''}>${ic('nav')} Πλοήγηση</a>
         <button class="btn ${s.done ? 'btn-ghost' : 'btn-success'}" id="mDone">${s.failed ? ic('restore') + ' Επαναφορά' : (s.done ? ic('restore') + ' Δεν παραδόθηκε' : ic('check') + ' Παραδόθηκε')}</button>
@@ -954,8 +994,52 @@
       b.querySelector('#mUp').onclick = () => { persist(); moveStop(s.id, -1); };
       b.querySelector('#mDown').onclick = () => { persist(); moveStop(s.id, 1); };
       b.querySelector('#mDel').onclick = () => { deleteStop(s.id, true); closeModal(); };
+      b.querySelector('#mFix').onclick = () => { persist(); fixStopPlace(s.id); };
     });
   }
+
+  // Πολλές στάσεις στο ίδιο σημείο
+  function groupPopup(ids) {
+    const list = orderedStops();
+    const ss = ids.map((id) => S.stops.find((x) => x.id === id)).filter(Boolean);
+    openModal(`${ss.length} στάσεις στο ίδιο σημείο`, `
+      <ul class="group-list">${ss.map((s) => `<li><button class="btn btn-ghost btn-block grp-item" data-id="${s.id}">
+        <span class="num">${S.route ? list.findIndex((x) => x.id === s.id) + 1 : '•'}</span>
+        <span class="grp-txt"><b>${esc(title(s))}</b>${whoText(s) ? `<small>${esc(whoText(s))}</small>` : ''}${s.exact === false ? `<small class="approx">${ic('alert')} κατά προσέγγιση</small>` : ''}</span></button></li>`).join('')}</ul>
+      <p class="muted small">Αν είναι διαφορετικές διευθύνσεις, κάποια μπήκε σε λάθος θέση: πάτα τη και «Λάθος θέση; Διόρθωση».</p>`, (b) => {
+      b.querySelectorAll('.grp-item').forEach((bt) => { bt.onclick = () => openStop(bt.dataset.id); });
+    });
+  }
+
+  // Διόρθωση θέσης στάσης: νέα αναζήτηση (προσυμπληρωμένη) ή «πάτα στον χάρτη»
+  function fixStopPlace(id) {
+    const s = S.stops.find((x) => x.id === id);
+    if (!s) return;
+    const apply = (lat, lng, label) => {
+      s.lat = lat; s.lng = lng; s.label = label || s.label; s.exact = true;
+      if (S.route) { S.route.legs = null; S.route.geometry = null; scheduleLegs(); }
+      save(); render();
+      if (mv) mv.setView(lat, lng, Math.max(mv.getZoom(), 16));
+      toast('Η θέση διορθώθηκε');
+    };
+    pickPlace('Διόρθωση θέσης', `<p class="small"><b>${esc(title(s))}</b></p>
+      <p class="muted small">Γράψε τη διεύθυνση πιο απλά (π.χ. μόνο «Αναπαύσεως 31, Νέα Αλικαρνασσός») και διάλεξε το σωστό αποτέλεσμα —
+      ή πάτα το κουμπί και μετά πάτα στο σωστό σημείο πάνω στον χάρτη.</p>
+      <button class="btn btn-ghost btn-block" id="fixOnMap">${ic('map')} Θα το δείξω στον χάρτη</button>`,
+    (it) => apply(it.lat, it.lng, it.label),
+    (b) => {
+      const inp = b.querySelector('#pSearch');
+      inp.value = cleanQuery(title(s)).replace(/\s*\b\d{3}\s?\d{2}\b/, '').replace(/[,\s]+$/, '');
+      inp.dispatchEvent(new Event('input'));
+      b.querySelector('#fixOnMap').onclick = () => {
+        closeModal(); setSheet('peek');
+        if (mv) mv.setView(s.lat, s.lng, Math.max(mv.getZoom(), 16));
+        toast('Πάτα στο σωστό σημείο στον χάρτη');
+        pendingFix = (lat, lng) => apply(lat, lng);
+      };
+    });
+  }
+  let pendingFix = null;
 
   // Επιλογή σημείου (για αφετηρία / τέλος)
   function pickPlace(title, extraHtml, onPick, onMount) {
@@ -1711,6 +1795,7 @@
     }
     if (!mv) mv = RootingMapView.createLeaflet(el, center);
     mv.onLongPress(onMapLongPress);
+    if (mv.onTap) mv.onTap((lat, lng) => { if (pendingFix) { const f = pendingFix; pendingFix = null; f(lat, lng); } });
     $('btnTraffic').classList.toggle('hidden', !mv.canTraffic);
     $('btnSat').classList.toggle('hidden', !mv.canSatellite);
     if (mv.canSatellite && S.settings.satellite) { mv.setSatellite(true); $('btnSat').classList.add('on'); }
@@ -1725,6 +1810,7 @@
       const el = $('map').cloneNode(false); $('map').replaceWith(el);
       mv = RootingMapView.createLeaflet(el, DEFAULT_CENTER);
       mv.onLongPress(onMapLongPress);
+      if (mv.onTap) mv.onTap((lat, lng) => { if (pendingFix) { const f = pendingFix; pendingFix = null; f(lat, lng); } });
       $('btnTraffic').classList.add('hidden'); $('btnNorth').classList.add('hidden'); $('btnSat').classList.add('hidden');
       applyTheme(); render(); fitAll(); showMe();
     }

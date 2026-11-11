@@ -120,6 +120,7 @@
         if (!traffic) traffic = new TrafficLayer();
         traffic.setMap(on ? map : null);
       },
+      onTap(cb) { map.addListener('click', (e) => { if (e.latLng) cb(e.latLng.lat(), e.latLng.lng()); }); },
       onLongPress(cb) {
         let t = null, last = 0;
         const fire = (e) => { if (Date.now() - last < 800) return; last = Date.now(); cb(e.latLng.lat(), e.latLng.lng()); };
@@ -138,7 +139,7 @@
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
     const group = L.layerGroup().addTo(map);
     let line = null, me = null;
-    const icon = (text, cls) => L.divIcon({ className: '', html: pinEl(text, cls).outerHTML, iconSize: [30, 30], iconAnchor: [15, 15] });
+    const icon = (text, cls) => { const w = String(text).length > 2 ? 16 + String(text).length * 8 : 30; return L.divIcon({ className: '', html: pinEl(text, cls).outerHTML, iconSize: [w, 30], iconAnchor: [w / 2, 15] }); };
     return {
       kind: 'leaflet', canRotate: false, canTraffic: false, raw: map,
       setView(lat, lng, zoom) { map.setView([lat, lng], zoom || map.getZoom()); },
@@ -183,6 +184,7 @@
           this._nav = L.polyline(coords, { color: '#0a66ff', weight: 7, opacity: 1 }).addTo(map);
         }
       },
+      onTap(cb) { map.on('click', (e) => cb(e.latlng.lat, e.latlng.lng)); },
       onLongPress(cb) { map.on('contextmenu', (e) => cb(e.latlng.lat, e.latlng.lng)); }
     };
   }
