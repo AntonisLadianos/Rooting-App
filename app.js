@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '50';
+  const APP_VERSION = '51';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -1129,6 +1129,13 @@
     if (name) savePlace(it, name);
     return it;
   }
+  function parseLatLng(q) {
+    const m = q.match(/!3d(-?\d{1,2}\.\d+)!4d(-?\d{1,3}\.\d+)/) || q.match(/@(-?\d{1,2}\.\d{3,}),\s*(-?\d{1,3}\.\d{3,})/) || q.match(/[?&](?:q|ll|query|destination)=(-?\d{1,2}\.\d{3,})(?:,|%2C)\s*(-?\d{1,3}\.\d{3,})/i) ||
+      q.match(/^\s*\(?(-?\d{1,2}\.\d{3,})\s*[,;\s]\s*(-?\d{1,3}\.\d{3,})\)?\s*$/);
+    if (!m) return null;
+    const lat = +m[1], lng = +m[2];
+    return Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng } : null;
+  }
   function pickPlace(title, extraHtml, onPick, onMount, std) {
     const places = std ? (S.places || []) : [];
     openModal(title, `${extraHtml || ''}
@@ -1160,6 +1167,17 @@
         clearTimeout(t);
         const q = inp.value.trim();
         if (q.length < 3) { res.innerHTML = ''; return; }
+        // συντεταγμένες («35.3387, 25.1442») ή ολόκληρος σύνδεσμος Google Maps με συντεταγμένες
+        const ll = parseLatLng(q);
+        if (ll) {
+          ++seq; res.innerHTML = '';
+          const li = document.createElement('li');
+          li.textContent = `Σημείο ${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)} — πάτα για επιλογή`;
+          li.onclick = async () => { closeModal(); if (mv) mv.setView(ll.lat, ll.lng, 16); onPick(std ? await namedPlace(ll.lat, ll.lng) : { label: await reverseGeocode(ll.lat, ll.lng), lat: ll.lat, lng: ll.lng, exact: true }); };
+          res.appendChild(li);
+          return;
+        }
+        if (/maps\.app\.goo\.gl|goo\.gl\/maps/i.test(q)) { ++seq; res.innerHTML = '<li class="muted">Ο σύντομος σύνδεσμος δεν διαβάζεται από εδώ. Στο Google Maps πάτα παρατεταμένα στο σημείο, αντίγραψε τις συντεταγμένες που βγαίνουν πάνω (π.χ. 35.33870, 25.14420) και κόλλησέ τες εδώ.</li>'; return; }
         t = setTimeout(async () => {
           const my = ++seq;
           try {
