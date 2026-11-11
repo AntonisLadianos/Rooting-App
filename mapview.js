@@ -51,14 +51,30 @@
       tiltInteractionEnabled: true,    // κλίση 3D
       isFractionalZoomEnabled: true
     });
-    let markers = [], line = null, me = null, info = null, traffic = null, navLine = null, navCase = null, dim = false;
+    let markers = [], line = null, me = null, info = null, traffic = null, navLine = null, navCase = null, dim = false, anim = 0;
     const routeStyle = () => (dim ? { strokeColor: '#9ca3af', strokeOpacity: 0.55, strokeWeight: 4 } : { strokeColor: '#2563eb', strokeOpacity: 0.85, strokeWeight: 6 });
 
     const view = {
       kind: 'google', scheme: scheme || 'FOLLOW_SYSTEM', canRotate: true, canTraffic: true, canSatellite: true, raw: map,
       setSatellite(on) { map.setMapTypeId(on ? 'hybrid' : 'roadmap'); },
-      follow(p, heading) { map.moveCamera({ center: ahead(p, heading, 70), heading: heading || 0, tilt: 50, zoom: 17.5 }); },
-      unfollow() { map.moveCamera({ heading: 0, tilt: 0, zoom: 14 }); },
+      follow(p, heading) { anim++; map.moveCamera({ center: ahead(p, heading, 70), heading: heading || 0, tilt: 50, zoom: 17.5 }); },
+      // ομαλό ζουμ πάνω σε ένα σημείο (π.χ. άφιξη στον προορισμό)
+      focusOn(p, heading, zoom) {
+        const my = ++anim, ms = 1400, t0 = performance.now();
+        const c0 = map.getCenter(), z0 = map.getZoom() || 17, ti0 = map.getTilt() || 0, h0 = map.getHeading() || 0;
+        const h1 = heading == null ? h0 : heading;
+        const dh = ((h1 - h0 + 540) % 360) - 180;
+        const ease = (x) => (x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2);
+        const step = (now) => {
+          if (my !== anim) return;
+          const k = ease(Math.min(1, (now - t0) / ms));
+          map.moveCamera({ center: { lat: c0.lat() + (p.lat - c0.lat()) * k, lng: c0.lng() + (p.lng - c0.lng()) * k },
+            zoom: z0 + ((zoom || 19.8) - z0) * k, tilt: ti0 + (45 - ti0) * k, heading: h0 + dh * k });
+          if (k < 1) requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      },
+      unfollow() { anim++; map.moveCamera({ heading: 0, tilt: 0, zoom: 14 }); },
       setNavRoute(coords) {
         if (navLine) { navLine.setMap(null); navLine = null; }
         if (navCase) { navCase.setMap(null); navCase = null; }
@@ -176,6 +192,7 @@
       resetNorth() {}, onRotate() {}, setTraffic() {}, canSatellite: false, setSatellite() {},
       follow(p, heading) { map.setView([ahead(p, heading, 60).lat, ahead(p, heading, 60).lng], 17, { animate: true }); },
       unfollow() { map.setZoom(14); },
+      focusOn(p, heading, zoom) { map.flyTo([p.lat, p.lng], Math.min(19, zoom || 19), { duration: 1.2 }); },
       setNavRoute(coords) {
         if (this._nav) { map.removeLayer(this._nav); this._nav = null; }
         if (this._navCase) { map.removeLayer(this._navCase); this._navCase = null; }

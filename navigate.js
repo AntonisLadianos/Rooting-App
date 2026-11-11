@@ -157,8 +157,9 @@
   async function start(opts) {
     stop(true);
     cur = Object.assign({ osrm: 'https://router.project-osrm.org' }, opts, {
-      route: null, hint: 0, stepIdx: 1, spoken: {}, offCount: 0, lastReroute: 0, arrived: false, heading: null, watch: null
+      route: null, hint: 0, stepIdx: 1, spoken: {}, offCount: 0, lastReroute: 0, arrived: false, heading: null, watch: null, free: false, freeAt: 0
     });
+    el('navRecenter').classList.add('hidden');
     muted = !!opts.muted;
     document.body.classList.add('navigating');
     if (opts.mv && opts.mv.dimRoute) opts.mv.dimRoute(true); // η γραμμή όλου του δρομολογίου γίνεται αχνή
@@ -217,8 +218,11 @@
     // κατεύθυνση χάρτη: GPS όταν κινούμαστε, αλλιώς η κατεύθυνση του δρόμου
     const roadBearing = bearing(r.pts[loc.idx], r.pts[Math.min(loc.idx + 1, r.pts.length - 1)]);
     const head = c.heading != null ? c.heading : roadBearing;
-    c.mv.follow(p, head);
-    if (c.arrived) return; // μετά την άφιξη η οθόνη μένει στο «Έφτασες»
+    c.head = head;
+    // ο χρήστης κουνάει τον χάρτη: δεν τον ακολουθούμε· μετά από 20″ χωρίς άγγιγμα επιστρέφουμε μόνοι μας
+    if (c.free && Date.now() - c.freeAt > 20000) recenter();
+    if (!c.free && !c.arrived) c.mv.follow(p, head);
+    if (c.arrived) return; // μετά την άφιξη η οθόνη μένει στο «Έφτασες» (ζουμ στον προορισμό)
 
     // εκτός διαδρομής -> επανυπολογισμός
     if (loc.off > Math.max(40, (acc || 0) * 1.5)) c.offCount++; else c.offCount = 0;
@@ -265,8 +269,38 @@
     if (navigator.vibrate) navigator.vibrate([60, 80, 60]);
     el('navText').textContent = 'Έφτασες στον προορισμό';
     el('navArrow').innerHTML = global.ic ? global.ic('flag', 'nav-flag') : '🏁'; el('navDist').textContent = ''; el('navThen').textContent = '';
+    if (!c.free) focusDest();
     if (c.onArrive) c.onArrive();
   }
+
+  // ---------- Ελεύθερος χάρτης / επαναφορά / ζουμ στον προορισμό ----------
+  function focusDest() {
+    const c = cur;
+    if (!c || !c.mv.focusOn) return;
+    c.mv.focusOn(c.dest, c.head, 19.8);
+  }
+  function goFree() {
+    if (!cur || !cur.route) return;
+    cur.freeAt = Date.now();
+    if (!cur.free) { cur.free = true; el('navRecenter').classList.remove('hidden'); }
+  }
+  function recenter() {
+    const c = cur;
+    if (!c) return;
+    c.free = false;
+    el('navRecenter').classList.add('hidden');
+    if (c.arrived) focusDest();
+    else if (c.last) c.mv.follow(c.last, c.head);
+  }
+  let touchOnMap = false, mouseOnMap = false;
+  const onMap = (e) => !!(e.target && e.target.closest && e.target.closest('#map'));
+  document.addEventListener('touchstart', (e) => { touchOnMap = onMap(e); }, { passive: true });
+  document.addEventListener('touchmove', () => { if (cur && touchOnMap) goFree(); }, { passive: true });
+  document.addEventListener('mousedown', (e) => { mouseOnMap = onMap(e); });
+  document.addEventListener('mousemove', (e) => { if (cur && mouseOnMap && e.buttons) goFree(); });
+  document.addEventListener('mouseup', () => { mouseOnMap = false; });
+  document.addEventListener('wheel', (e) => { if (cur && onMap(e)) goFree(); }, { passive: true });
+  document.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('#navRecenter')) recenter(); });
 
   function stop(silent) {
     if (!cur) return;
