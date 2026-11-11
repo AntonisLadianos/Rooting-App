@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '37';
+  const APP_VERSION = '38';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -15,10 +15,14 @@
     const standalone = navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
     const portrait = innerHeight > innerWidth;
     const screenLong = Math.max(screen.width, screen.height);
-    const short = standalone && portrait && screenLong - innerHeight > 20;
+    // πόσο ψηλή βγήκε στην πράξη η εφαρμογή (με την παράκαμψη vh μπορεί να γεμίζει όλη την οθόνη)
+    const appEl = document.getElementById('app');
+    const h = Math.max(innerHeight, appEl ? appEl.getBoundingClientRect().height : 0);
+    const short = standalone && portrait && screenLong - h > 20;
     document.documentElement.style.setProperty('--safe-bottom', short ? '0px' : 'env(safe-area-inset-bottom, 0px)');
   }
   fixViewport();
+  window.addEventListener('load', fixViewport);
   window.addEventListener('resize', fixViewport);
   window.addEventListener('orientationchange', () => setTimeout(fixViewport, 300));
 

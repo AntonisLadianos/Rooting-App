@@ -551,3 +551,10 @@ body.navigating .modal { z-index: 1100; }
 .grp-txt { display: flex; flex-direction: column; min-width: 0; }
 .grp-txt small { color: var(--muted); font-weight: 400; }
 .grp-txt small.approx { color: #d97706; font-weight: 600; }
+
+/* ---- iOS (εφαρμογή αρχικής οθόνης): η σελίδα μένει πιο κοντή από την οθόνη και αφήνει κενό κάτω.
+   Παράκαμψη από τις αναφορές WebKit (bugs 254868 / 301108): ύψος σε vh αντί για inset:0 ---- */
+@media (display-mode: standalone) {
+  html, body { height: 100vh; }
+  body, #app, .modal, .busy, .drive, .nav { bottom: auto; height: 100vh; }
+}
