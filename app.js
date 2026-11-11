@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '35';
+  const APP_VERSION = '36';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -482,13 +482,13 @@
       const meta = [];
       if (eta && !s.done) meta.push(`${ic('clock')} ${fmtClock(eta.at)}`, `${fmtKm(eta.leg.distance)} · ${fmtDur(eta.leg.duration)}`);
       if (s.pkgs > 1) meta.push(`<b class="pkg-inline">${ic('package')} ${pkgsText(s.pkgs)}</b>`);
-      if (whoText(s)) meta.push(`${ic('user')} ${esc(whoText(s))}`);
+      if (whoText(s)) meta.push(`${ic(s.hub ? 'home' : 'user')} ${esc(whoText(s))}`);
       if (s.note) meta.push(`${ic('note')} ${esc(s.note)}`);
       if (s.phone) meta.push(`${ic('phone')} ${esc(s.phone)}`);
       li.innerHTML = `
         <div class="sw-bg"><span class="sw-done">${s.done ? ic('restore') + ' Επαναφορά' : ic('check') + ' Παραδόθηκε'}</span><span class="sw-del">${ic('trash')} Διαγραφή</span></div>
         <div class="stop${s.done ? ' done' : ''}${s.failed ? ' failed' : ''}${nextStop && nextStop.id === s.id ? ' current' : ''}">
-          <span class="num">${s.failed ? '✗' : (s.done ? '✓' : (S.route ? i + 1 : '•'))}</span>
+          <span class="num${s.hub && !s.done ? ' num-' + s.hub.kind : ''}">${s.failed ? '✗' : (s.done ? '✓' : (S.route ? i + 1 : '•'))}</span>
           <span class="stop-body">
             <span class="stop-title">${esc(title(s))}</span>
             ${meta.length ? `<span class="stop-meta">${meta.join('<span class="sep">·</span>')}</span>` : ''}
@@ -585,7 +585,7 @@
       const isNext = nextStop && nextStop.id === s.id;
       items.push({
         lat: s.lat, lng: s.lng, text: s.failed ? '✗' : (s.done ? '✓' : (S.route ? String(i + 1) : '•')),
-        cls: s.failed ? 'pin-failed' : (s.done ? 'pin-done' : (isNext ? 'pin-next' : '')), title: title(s),
+        cls: s.failed ? 'pin-failed' : (s.done ? 'pin-done' : (isNext ? 'pin-next' : (s.hub ? 'pin-hub pin-' + s.hub.kind : ''))), title: title(s),
         z: isNext ? 50 : (s.done ? 1 : 10), onClick: () => stopPopup(s.id)
       });
     });
@@ -1064,6 +1064,7 @@
     entries.forEach((e, i) => {
       const r = res[i];
       if (!r) { failed.push(e); if (e.err) netErr++; return; }
+      if (e.hub) { S.stops.push(hubStop(e.hub, e.addr, r)); rememberHub(e.hub, e.addr, r); added++; return; }
       const people = (e.people || []).map((p) => ({ name: p.name, phone: p.phone, pkgs: p.pkgs || 1 }));
       S.stops.push({ id: uid(), label: r.label, lat: r.lat, lng: r.lng, note: people.length ? '' : (e.name || ''), phone: e.phone || '', orig: e.addr, exact: r.exact, done: false,
         pkgs: e.pkgs || (people.length ? people.reduce((a, p) => a + p.pkgs, 0) : undefined), people: people.length ? people : undefined, codes: e.codes || undefined });
@@ -1151,6 +1152,10 @@
 
   // Υπάρχει ήδη στάση στην ίδια διεύθυνση; dup = ίδια δέματα (κωδικοί/ονόματα), αλλιώς θα προστεθούν σε αυτήν
   function matchExisting(g) {
+    if (g.hub) {
+      const st = S.stops.find((x) => !x.failed && !x.done && x.hub && hubKey(x.hub) === hubKey(g.hub));
+      return st ? { stop: st, dup: true } : null;
+    }
     const k = RootingOCR.addrKey(g.address);
     if (k.length < 4) return null;
     const st = S.stops.find((x) => !x.failed && RootingOCR.addrKey(x.orig || x.label) === k);
@@ -1162,8 +1167,24 @@
     return { stop: st, dup };
   }
   function pkgsText(n) { return n === 1 ? '1 δέμα' : `${n} δέματα`; }
+  // ---------- Locker / Clever Point ----------
+  // Η καρτέλα τους δεν έχει διεύθυνση: τη γράφει ο χρήστης μία φορά και τη θυμόμαστε ανά όνομα σημείου.
+  function hubKind(h) { return h.kind === 'locker' ? 'Locker' : 'Clever Point'; }
+  function hubKey(h) { return h.kind + ':' + RootingOCR.key(h.name || ''); }
+  function hubMem(h) { return (S.hubs || {})[hubKey(h)] || null; }
+  function rememberHub(h, addr, r) {
+    S.hubs = S.hubs || {};
+    S.hubs[hubKey(h)] = { addr, lat: r.lat, lng: r.lng, label: r.label, exact: r.exact !== false };
+    save();
+  }
+  function hubNote(h) { return [h.pickup ? 'Παραλαβή: ' + h.pickup : '', h.ret ? 'Επιστροφή: ' + h.ret : ''].filter(Boolean).join(' · '); }
+  function hubStop(h, addr, r) {
+    return { id: uid(), label: r.label, lat: r.lat, lng: r.lng, note: hubNote(h), phone: '', orig: addr, exact: r.exact !== false, done: false,
+      hub: { kind: h.kind, name: h.name || '' }, pkgs: h.deliver || undefined, people: [{ name: h.name || hubKind(h), phone: '', pkgs: h.deliver || 1 }] };
+  }
   // «Μαρία (2) · Νίκος (1)» ή η σημείωση για παλιές στάσεις
   function whoText(s) {
+    if (s.hub) return hubKind(s.hub) + (s.hub.name ? ' · ' + s.hub.name : '');
     const pp = (s.people || []).filter((p) => p.name);
     if (!pp.length) return '';
     const showN = pp.length > 1 || pp.some((p) => (p.pkgs || 1) > 1);
@@ -1182,16 +1203,31 @@
         <li>
           <input type="checkbox" id="fc${i}" ${it.dup || it.fragment ? '' : 'checked'}>
           <div class="found-body">
-            <input type="text" id="fa${i}" value="${esc(it.address)}">
-            <small>${[it.pkgs > 1 ? `<b class="pkg-badge">${ic('package')} ${pkgsText(it.pkgs)}</b>` : '', (it.people || []).length ? ic('user') + ' ' + esc(whoText(it)) : (it.name ? ic('user') + ' ' + esc(it.name) : ''), it.phone ? ic('phone') + ' ' + esc(it.phone) : '', it.dup ? '<b>υπάρχει ήδη</b>' : '', it.mergeInto ? `<b class="merge-note">${ic('plus')} θα μπει στη στάση που υπάρχει ήδη σε αυτή τη διεύθυνση</b>` : '', it.ambig ? `<span class="ambig">${ic('alert')} Αριθμός: <button class="chip-sm on" data-i="${i}" data-v="a">${esc(it.ambig.a)}</button> ή <button class="chip-sm" data-i="${i}" data-v="b">${esc(it.ambig.b)}</button>;</span>` : '', it.fragment ? `<b>${ic('alert')} κομμάτι διεύθυνσης — συμπλήρωσε την οδό</b>` : ''].filter(Boolean).join(' · ')}</small>
+            ${it.hub ? `<div class="hub-head"><b class="hub-badge hub-${it.hub.kind}">${ic('home')} ${hubKind(it.hub)}</b> <b>${esc(it.hub.name || '')}</b></div>` : ''}
+            <input type="text" id="fa${i}" value="${esc(it.hub ? ((hubMem(it.hub) || {}).addr || '') : it.address)}"${it.hub ? ` placeholder="Γράψε τη διεύθυνση του ${hubKind(it.hub)}"` : ''}>
+            <small id="fs${i}">${it.hub ? [it.hub.deliver ? `<b class="pkg-badge">${ic('package')} ${pkgsText(it.hub.deliver)}</b>` : '', esc(hubNote(it.hub)),
+              it.dup ? '<b>υπάρχει ήδη</b>' : '', hubMem(it.hub) ? `<span class="hub-mem">${ic('check')} τη θυμάμαι από άλλη μέρα</span>` : `<span class="hub-ask">${ic('alert')} γράψε τη διεύθυνση μία φορά — θα τη θυμάμαι</span>`].filter(Boolean).join(' · ') : [it.pkgs > 1 ? `<b class="pkg-badge">${ic('package')} ${pkgsText(it.pkgs)}</b>` : '', (it.people || []).length ? ic('user') + ' ' + esc(whoText(it)) : (it.name ? ic('user') + ' ' + esc(it.name) : ''), it.phone ? ic('phone') + ' ' + esc(it.phone) : '', it.dup ? '<b>υπάρχει ήδη</b>' : '', it.mergeInto ? `<b class="merge-note">${ic('plus')} θα μπει στη στάση που υπάρχει ήδη σε αυτή τη διεύθυνση</b>` : '', it.ambig ? `<span class="ambig">${ic('alert')} Αριθμός: <button class="chip-sm on" data-i="${i}" data-v="a">${esc(it.ambig.a)}</button> ή <button class="chip-sm" data-i="${i}" data-v="b">${esc(it.ambig.b)}</button>;</span>` : '', it.fragment ? `<b>${ic('alert')} κομμάτι διεύθυνσης — συμπλήρωσε την οδό</b>` : ''].filter(Boolean).join(' · ')}</small>
           </div>
         </li>`).join('')}</ul>
       <button class="btn btn-primary btn-block" id="foundGo">Προσθήκη</button>
       <div id="foundLog" class="bulk-log"></div>`, (b) => {
       const btn = b.querySelector('#foundGo');
-      const count = () => items.filter((_, i) => b.querySelector('#fc' + i).checked).length;
+      const count = () => items.filter((_, i) => b.querySelector('#fc' + i).checked && b.querySelector('#fa' + i).value.trim()).length;
       const upd = () => { btn.textContent = `Προσθήκη ${count()} στάσεων`; btn.disabled = !count(); };
-      items.forEach((_, i) => b.querySelector('#fc' + i).addEventListener('change', upd));
+      items.forEach((_, i) => { b.querySelector('#fc' + i).addEventListener('change', upd); b.querySelector('#fa' + i).addEventListener('input', upd); });
+      // Locker/Clever Point που δεν έχουμε ξαναδεί: δοκιμάζουμε να τα βρει η Google από το όνομα (ο χρήστης ελέγχει)
+      if (googleEnabled()) items.forEach((it, i) => {
+        if (!it.hub || !it.hub.name || hubMem(it.hub)) return;
+        const ref = myPos || stopsCenter() || S.lastPos;
+        const q = it.hub.name.replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim();
+        googleGeocode(q, ref).then((g) => {
+          const inp = b.querySelector('#fa' + i);
+          if (!g || !inp || inp.value.trim() || (ref && RootingGeo.distKm(ref, g) > 25)) return;
+          inp.value = g.label; upd();
+          const note = b.querySelector('#fs' + i + ' .hub-ask');
+          if (note) note.innerHTML = `${ic('search')} βρέθηκε από τη Google — έλεγξε ότι είναι σωστό`;
+        }).catch(() => {});
+      });
       b.querySelectorAll('.chip-sm').forEach((ch) => {
         ch.onclick = () => {
           const it = items[+ch.dataset.i];
@@ -1218,8 +1254,16 @@
           if (st.done && !st.failed) { st.done = false; st.doneAt = null; } // νέο δέμα σε παραδομένη διεύθυνση -> ξανά στη λίστα
           merged++;
         });
+        let hubsKnown = 0;
+        // Locker/Clever Point με γνωστή διεύθυνση (ίδια με την αποθηκευμένη): χωρίς νέα αναζήτηση
+        chosen.filter((x) => x.it.hub).forEach((x) => {
+          const m = hubMem(x.it.hub);
+          if (m && m.addr === x.addr) { S.stops.push(hubStop(x.it.hub, x.addr, m)); x.known = true; hubsKnown++; }
+        });
+        if (hubsKnown) invalidateRoute();
+        merged += hubsKnown;
         if (merged) { save(); render(); }
-        const out = await geocodeBatch(chosen.filter((x) => !x.it.mergeInto).map((x) => ({ addr: x.addr, name: x.it.name, phone: x.it.phone, pkgs: x.it.pkgs, people: x.it.people, codes: x.it.codes })), (t) => { btn.textContent = t; });
+        const out = await geocodeBatch(chosen.filter((x) => !x.it.mergeInto && !x.known).map((x) => ({ addr: x.addr, name: x.it.name, phone: x.it.phone, pkgs: x.it.pkgs, people: x.it.people, codes: x.it.codes, hub: x.it.hub })), (t) => { btn.textContent = t; });
         out.added += merged;
         btn.disabled = false; btn.textContent = 'Προσθήκη';
         showBatchResult(b.querySelector('#foundLog'), btn, out);

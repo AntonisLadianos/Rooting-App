@@ -233,7 +233,28 @@
   // ---------- Ανάγνωση ανά καρτέλα ----------
   // Στην εφαρμογή courier κάθε καρτέλα ξεκινά με «Παράδοση σε πελάτη» (ή «Παραλαβή…») και
   // τελειώνει με «N πακέτο/πακέτα …» και τον κωδικό αποστολής («AZP - 94GOE7WM4WK6J»).
-  const RE_HEADER = /παρ[αά]δοση\s*σε\s*\S+|παραλαβ[ήη]\s*(απ[οό]|σε)|clever\s*point/i;
+  const RE_HEADER = /παρ[αά]δοση\s*σε\s*\S+|παραλαβ[ήη]\s*(απ[οό]|σε)|clever\s*point|πακ[εέ]τα\s*locker/i;
+  // Locker / Clever Point: σημεία χωρίς διεύθυνση στην καρτέλα (μόνο όνομα και πλήθος δεμάτων)
+  function hubKind(l) {
+    if (/τοποθεσ/i.test(l)) return '';                       // κουμπί «Τοποθεσία Locker / Clever Point»
+    if (/πακ[εέ]τα\s*locker/i.test(l)) return 'locker';
+    if (/^clever\s*point\b/i.test(l)) return 'clever';
+    return '';
+  }
+  function hubCounts(lines) {
+    const c = { deliver: null, pickup: null, ret: null };
+    lines.forEach((l) => {
+      const m = l.match(/[:.;]\s*([\dΊIl|]{1,3})\s*$/) || l.match(/(\d{1,3})\s*$/);
+      if (!m) return;
+      m[1] = m[1].replace(/[ΊIl|]/g, '1');
+      const t = l.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+      const n = +m[1];
+      if (/στροφ/.test(t)) c.ret = n;
+      else if (/λαβ/.test(t)) c.pickup = n;
+      else if (/οση|οσh/.test(t)) c.deliver = n;
+    });
+    return c;
+  }
   const RE_CUSTOMER = /παρ[αά]δοση\s*σε\s*πελ[αά]τη|παραλαβ[ήη]\s*(απ[οό]|σε)\s*πελ[αά]τη/i;
   const RE_STORE = /παρ[αά]δοση\s*σε\s*κατ[αά]στημα/i;
   // «1 πακέτο παράδοση» / «2 πακέτα …» (το 1 συχνά διαβάζεται Ί/I/l)
@@ -279,7 +300,7 @@
   function extractImage(text) {
     const raw = text.split(/\r?\n/);
     const heads = [];
-    raw.forEach((l, i) => { if (RE_HEADER.test(clean(l))) heads.push(i); });
+    raw.forEach((l, i) => { const c = clean(l); if (RE_HEADER.test(c) && !/τοποθεσ/i.test(c)) heads.push(i); });
     if (!heads.length) return { cards: null, items: extract(text) };
     const pre = extract(raw.slice(0, heads[0]).join('\n'));
     const preLines = raw.slice(0, heads[0]).map(clean);
@@ -287,6 +308,15 @@
     const cards = [];
     heads.forEach((h, k) => {
       const seg = raw.slice(h, k + 1 < heads.length ? heads[k + 1] : raw.length);
+      const kind = hubKind(clean(seg[0]));
+      if (kind) {
+        const hl = seg.slice(1).map(clean).filter((l) => l.length > 1);
+        const name = (hl[0] && !/\d/.test(hl[0]) && !/παραλαβ|παραδοσ|επιστροφ/i.test(hl[0])) ? hl[0] : '';
+        const cnt = hubCounts(hl);
+        cards.push({ hub: Object.assign({ kind, name }, cnt), address: '', name: (kind === 'locker' ? 'Locker' : 'Clever Point') + (name ? ' · ' + name : ''),
+          phone: '', pkgs: cnt.deliver || 0, codes: [], closed: true });
+        return;
+      }
       const store = RE_STORE.test(clean(seg[0]));
       if (!store && !RE_CUSTOMER.test(clean(seg[0]))) return; // π.χ. «Παράδοση σε Αποθήκη», Locker
       const lines = seg.map(clean).filter((l) => l.length > 1);
@@ -378,6 +408,7 @@
       lastOpen = null;
       img.cards.forEach((c, i) => {
         const x = { address: c.address, name: c.name, phone: c.phone, pkgs: c.pkgs, codes: c.codes, img: imgNo };
+        if (c.hub) x.hub = c.hub;
         out.push(x);
         if (i === img.cards.length - 1 && !c.closed) lastOpen = x;
       });
@@ -412,7 +443,14 @@
       keep.codes = keep.codes.concat(c.filter((x) => !keep.codes.some((y) => sameCode(x, y))));
     });
     // κομμένη καρτέλα που έμεινε χωρίς οδό, όνομα και τηλέφωνο = σκουπίδι («Λι ςΧνπ« ΝΠπΘν»)
-    items = uniq.filter((it) => hasStreet(it.address) || it.name || it.phone);
+    const hubs = [];
+    uniq.filter((it) => it.hub).forEach((it) => {
+      const h = hubs.find((x) => x.hub.kind === it.hub.kind && nameKey(x.hub.name) === nameKey(it.hub.name));
+      if (!h) { hubs.push(Object.assign({}, it, { hub: Object.assign({}, it.hub) })); return; }
+      ['deliver', 'pickup', 'ret'].forEach((k) => { if (it.hub[k] != null) h.hub[k] = Math.max(h.hub[k] || 0, it.hub[k]); });
+      h.pkgs = h.hub.deliver || 0;
+    });
+    items = uniq.filter((it) => !it.hub && (hasStreet(it.address) || it.name || it.phone));
     const groups = [];
     const num = (a) => (String(a).split(',')[0].match(/\d+/) || [''])[0];
     items.forEach((it) => {
@@ -453,7 +491,7 @@
       g.codes = byName.flatMap((p) => p.codes);
       delete g.key;
     });
-    return groups;
+    return groups.concat(hubs);
   }
 
   const api = { recognize, extract, extractImage, key, tidyAddress, mergeAcross, applyAmbig, fixAreas, groupCards, addrKey, codesOverlap, normCode };

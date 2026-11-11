@@ -523,3 +523,19 @@ body.navigating .modal { z-index: 1100; }
 /* σκούρος δωρεάν χάρτης (OpenStreetMap) */
 #map.dark-tiles .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.95) contrast(.88); }
 #map.dark-tiles { background: #1b1f27; }
+
+/* ---- Locker / Clever Point ---- */
+.hub-head { margin-bottom: 4px; font-size: 14.5px; }
+.hub-badge { display: inline-flex; align-items: center; gap: 4px; border-radius: 8px; padding: 2px 8px; color: #fff; font-size: 12.5px; font-weight: 700; vertical-align: 1px; }
+.hub-badge .ic { width: 13px; height: 13px; }
+.hub-locker { background: #7c3aed; }
+.hub-clever { background: #0891b2; }
+.hub-ask { color: var(--danger); font-weight: 600; }
+.hub-ask .ic, .hub-mem .ic { width: 13px; height: 13px; vertical-align: -2px; }
+.hub-mem { color: var(--success); font-weight: 600; }
+.pin.pin-hub { border-radius: 9px; }
+.pin.pin-locker { background: #7c3aed; }
+.pin.pin-clever { background: #0891b2; }
+.stop .num.num-locker { background: #7c3aed; border-radius: 9px; }
+.stop .num.num-clever { background: #0891b2; border-radius: 9px; }
+.stop.current .num.num-locker, .stop.current .num.num-clever { background: var(--next); }
