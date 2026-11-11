@@ -132,12 +132,13 @@
   const RE_STREETNUM = /\p{L}{3,}[\p{L}.\s'-]*\s\d{1,4}[\p{L}]?\s*(?:[,-]|$)/u;
 
   function clean(line) {
-    let s = line.replace(/\s+/g, ' ').trim();
+    let s = line.replace(/µ/g, 'μ').replace(/\S*[\u1F00-\u1FFF]\S*/g, ' ').replace(/\s+/g, ' ').trim(); // «ἴνι», «{[᾿}» = σκουπίδια εικονιδίων
     // αφαίρεση «σκουπιδιών» από εικονίδια στην αρχή της γραμμής (π.χ. "ΟΦ ", "ς. ", "'. ")
     for (let k = 0; k < 2; k++) {
       s = s.replace(/^[^\p{L}\d(]+/u, '');
       if (/^(Ελ|Αγ|Οδ|Λ\.|Γ\.|Ν\.|Κ\.|Π\.)\s/u.test(s)) break; // συντομογραφίες οδών («Ελ Γκρέκο», «Αγ. Νικολάου»)
-      s = s.replace(/^[\p{L}\d]{1,2}[^\p{L}\d\s(]*\s+(?=[\p{Lu}(\d])/u, '');
+      s = s.replace(/^[\p{L}\d]{1,2}[^\p{L}\d\s(]*\s+(?=[^\p{L}\d\s]*[\p{Lu}(\d])/u, ''); // «Αν "ΙΩΑΝΝΗΣ …»
+      s = s.replace(/^[\p{L}\d]{1,2}[^\p{L}\d\s(]+\s+(?=\p{Ll}{3,})/u, '');                     // «ζ2} πάτμου 6»
       s = s.replace(/^[\p{Lu}\d]{1,2}[^\p{L}\d\s(]*\s+(?=\p{Ll}{3,})/u, ''); // «ΟΦ θεοφανους»
     }
     return s.trim();
@@ -234,6 +235,7 @@
   // τελειώνει με «N πακέτο/πακέτα …» και τον κωδικό αποστολής («AZP - 94GOE7WM4WK6J»).
   const RE_HEADER = /παρ[αά]δοση\s*σε\s*\S+|παραλαβ[ήη]\s*(απ[οό]|σε)|clever\s*point/i;
   const RE_CUSTOMER = /παρ[αά]δοση\s*σε\s*πελ[αά]τη|παραλαβ[ήη]\s*(απ[οό]|σε)\s*πελ[αά]τη/i;
+  const RE_STORE = /παρ[αά]δοση\s*σε\s*κατ[αά]στημα/i;
   // «1 πακέτο παράδοση» / «2 πακέτα …» (το 1 συχνά διαβάζεται Ί/I/l)
   function pkgCount(lines) {
     const l = lines.find((x) => /πακ[εέ]τ/i.test(x));
@@ -285,15 +287,24 @@
     const cards = [];
     heads.forEach((h, k) => {
       const seg = raw.slice(h, k + 1 < heads.length ? heads[k + 1] : raw.length);
-      if (!RE_CUSTOMER.test(clean(seg[0]))) return; // π.χ. «Παράδοση σε Αποθήκη», Clever Point
+      const store = RE_STORE.test(clean(seg[0]));
+      if (!store && !RE_CUSTOMER.test(clean(seg[0]))) return; // π.χ. «Παράδοση σε Αποθήκη», Locker
       const lines = seg.map(clean).filter((l) => l.length > 1);
       const found = extract(seg.slice(1).join('\n'));
+      if (store) {
+        // κατάστημα: όνομα καταστήματος, η διεύθυνση γράφεται δύο φορές, ωράριο — κρατάμε την καλύτερη διεύθυνση
+        const best = found.filter((f) => hasStreet(f.address)).sort((a, b) => (RE_POSTAL.test(b.address) ? 1 : 0) - (RE_POSTAL.test(a.address) ? 1 : 0))[0];
+        const ph = lines.find(isPhoneLine);
+        if (best) cards.push({ pkgs: pkgCount(lines), codes: codesOf(lines), address: best.address, name: lines[1] && !/\d/.test(lines[1]) ? lines[1] : '',
+          phone: ph ? normPhone(ph) : '', closed: lines.some(isCardEnd) || !!ph, store: true });
+        return;
+      }
       let nameLine = lines[1] && looksLikeName(lines[1]) ? lines[1] : '';
       let addrStart = nameLine ? 2 : 1;
       // όνομα σε δύο γραμμές («Σταυρουλα Καναβακη» / «Τζώρτζογλου»)
       // («ΝΑΤΑΛΙΑ ΒΑΧΑΜΠΟΒΑ» / «ΜΠΙΤΣΑΚΑΚΗΣ ΒΑΓΓΕΛΗΣ»): 2η γραμμή χωρίς αριθμούς/κόμμα, και μετά ακολουθεί διεύθυνση
       const after = lines[3];
-      if (nameLine && lines[2] && !/[\d,]/.test(lines[2]) && !isNoise(lines[2]) && /^\p{L}{3,}(\s+\p{L}{2,}){0,2}$/u.test(lines[2]) &&
+      if (nameLine && lines[2] && !/[\d,]/.test(lines[2]) && !isNoise(lines[2]) && /^\p{L}{3,}(\s+\p{L}{2,}){0,1}$/u.test(lines[2]) && !/^(λεωφ|οδ[οό]ς|πλατε|πάροδ|παροδ)/i.test(lines[2]) &&
         after && !isPhoneLine(after) && !isCardEnd(after)) { nameLine += ' ' + lines[2]; addrStart = 3; }
       const phoneLine = lines.find(isPhoneLine);
       // Διεύθυνση = ΟΛΕΣ οι γραμμές ανάμεσα στο όνομα και στο τηλέφωνο (ή στο τέλος της καρτέλας)
@@ -388,7 +399,11 @@
     const uniq = [];
     items.forEach((it) => {
       const c = it.codes || [];
-      const same = c.length ? uniq.find((u) => u.img !== it.img && (u.codes || []).length && codesOverlap(u.codes, c)) : null;
+      // ο ίδιος κωδικός (σχεδόν): πολλοί κωδικοί μοιάζουν (ίδια αρχή «94GOEO…»), γι' αυτό με μικρή διαφορά
+      // ζητάμε και ίδιο όνομα ή ίδια διεύθυνση
+      const close = (u) => (u.codes || []).some((a) => c.some((b) => lev(a, b) <= 1));
+      const same = c.length ? uniq.find((u) => u.img !== it.img && (u.codes || []).length && codesOverlap(u.codes, c) &&
+        (close(u) || nameKey(u.name) === nameKey(it.name) || addrKey(u.address) === addrKey(it.address))) : null;
       if (!same) { uniq.push(Object.assign({}, it)); return; }
       const keep = better(same, it) === it ? Object.assign(same, { address: it.address }) : same;
       if ((it.name || '').length > (keep.name || '').length && nameKey(it.name).includes(nameKey(keep.name).slice(0, 6))) keep.name = it.name;
@@ -396,12 +411,17 @@
       keep.pkgs = Math.max(keep.pkgs || 0, it.pkgs || 0);
       keep.codes = keep.codes.concat(c.filter((x) => !keep.codes.some((y) => sameCode(x, y))));
     });
-    items = uniq;
+    // κομμένη καρτέλα που έμεινε χωρίς οδό, όνομα και τηλέφωνο = σκουπίδι («Λι ςΧνπ« ΝΠπΘν»)
+    items = uniq.filter((it) => hasStreet(it.address) || it.name || it.phone);
     const groups = [];
+    const num = (a) => (String(a).split(',')[0].match(/\d+/) || [''])[0];
     items.forEach((it) => {
       const k = addrKey(it.address);
       const person = { name: it.name || '', phone: it.phone || '', pkgs: it.pkgs || 1, codes: it.codes || [], img: it.img };
       let g = k.length >= 4 ? groups.find((x) => x.key === k) : null;
+      // ίδιος πελάτης (όνομα + τηλέφωνο) και ίδιος αριθμός, γραμμένο αλλιώς («ανδρεου παπανδρεου 71» / «Λεωφόρος Ανδρέα Παπανδρέου 71»)
+      if (!g && it.phone && num(it.address)) g = groups.find((x) => num(x.address) === num(it.address) &&
+        x.people.some((p) => p.phone === it.phone && nameKey(p.name) === nameKey(it.name)));
       if (!g) {
         groups.push(Object.assign({}, it, { key: k, people: [person] }));
         return;
