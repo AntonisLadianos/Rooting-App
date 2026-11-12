@@ -135,7 +135,74 @@
   // ---------- Κατάσταση πλοήγησης ----------
   let cur = null;
 
+  // ---------- Διαδρομή από Google (Routes API) — σωστοί μονόδρομοι/απαγορεύσεις ----------
+  function decodePolyline(str) {
+    const out = []; let i = 0, lat = 0, lng = 0;
+    while (i < str.length) {
+      for (const k of [0, 1]) {
+        let b, shift = 0, res = 0;
+        do { b = str.charCodeAt(i++) - 63; res |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+        const d = (res & 1) ? ~(res >> 1) : (res >> 1);
+        if (k === 0) lat += d; else lng += d;
+      }
+      out.push({ lat: lat / 1e5, lng: lng / 1e5 });
+    }
+    return out;
+  }
+  const G_MOD = {
+    TURN_LEFT: 'left', TURN_RIGHT: 'right', TURN_SLIGHT_LEFT: 'slight left', TURN_SLIGHT_RIGHT: 'slight right',
+    TURN_SHARP_LEFT: 'sharp left', TURN_SHARP_RIGHT: 'sharp right', UTURN_LEFT: 'uturn', UTURN_RIGHT: 'uturn',
+    RAMP_LEFT: 'slight left', RAMP_RIGHT: 'slight right', FORK_LEFT: 'slight left', FORK_RIGHT: 'slight right',
+    STRAIGHT: 'straight', MERGE: 'straight', NAME_CHANGE: 'straight', DEPART: 'straight'
+  };
+  // Απάντηση Google -> ίδια μορφή με το buildRoute (pts, cum, steps[{at, text, arrow, step, silent}], total, duration)
+  function buildGoogleRoute(gr) {
+    const pts = decodePolyline(gr.polyline.encodedPolyline);
+    if (pts.length < 2) throw new Error('κενή διαδρομή');
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + dist(pts[i - 1], pts[i]));
+    const steps = [];
+    let from = 0;
+    (gr.legs || []).forEach((leg) => (leg.steps || []).forEach((st) => {
+      const ni = st.navigationInstruction || {};
+      const man = ni.maneuver || (steps.length ? '' : 'DEPART');
+      const txt = String(ni.instructions || '').split('\n')[0].trim();
+      const sp = st.polyline && st.polyline.encodedPolyline ? decodePolyline(st.polyline.encodedPolyline) : [];
+      let best = from, bd = Infinity;
+      if (sp.length) for (let i = from; i < pts.length; i++) { const d = dist(sp[0], pts[i]); if (d < bd) { bd = d; best = i; } if (bd < 3 && d > 200) break; }
+      from = best;
+      if (!steps.length) { steps.push({ step: { maneuver: { type: 'depart' }, name: '' }, idx: 0, at: 0, leg: 0, silent: true, text: txt || 'Ξεκίνα', arrow: '↑' }); return; }
+      if (!txt && !man) return; // τμήμα χωρίς οδηγία
+      const round = /ROUNDABOUT/.test(man);
+      const mod = G_MOD[man] || 'straight';
+      steps.push({ step: { maneuver: { type: round ? 'roundabout' : 'turn', modifier: mod }, name: '' }, idx: best, at: cum[best], leg: 0,
+        silent: man === 'NAME_CHANGE' || man === 'STRAIGHT', text: txt || instruction({ maneuver: { type: 'turn', modifier: mod } }).text, arrow: round ? '⟳' : (ARROW[mod] || '↑') });
+    }));
+    if (!steps.length) steps.push({ step: { maneuver: { type: 'depart' }, name: '' }, idx: 0, at: 0, leg: 0, silent: true, text: 'Ξεκίνα', arrow: '↑' });
+    const last = pts.length - 1;
+    steps.push(Object.assign({ step: { maneuver: { type: 'arrive' }, name: '' }, idx: last, at: cum[last], leg: 0, silent: false }, instruction({ maneuver: { type: 'arrive' } }, true)));
+    return { pts, cum, steps, total: cum[last], duration: parseFloat(gr.duration) || (cum[last] / 8), via: 'google' };
+  }
+  const G_FIELDS = 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.steps.navigationInstruction,routes.legs.steps.distanceMeters,routes.legs.steps.polyline.encodedPolyline';
+  async function googleRoute(from, to, key) {
+    const ll = (p) => ({ location: { latLng: { latitude: p.lat, longitude: p.lng } } });
+    const r = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes?key=' + encodeURIComponent(key) + '&fields=' + encodeURIComponent(G_FIELDS), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ origin: ll(from), destination: ll(to), travelMode: 'DRIVE', routingPreference: 'TRAFFIC_UNAWARE', languageCode: 'el', units: 'METRIC' })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.error) throw new Error((j.error && j.error.message) || ('HTTP ' + r.status));
+    if (!j.routes || !j.routes[0]) throw new Error('Δεν βρέθηκε διαδρομή');
+    return buildGoogleRoute(j.routes[0]);
+  }
+
   async function fetchRoute(from, to, heading) {
+    // πρώτα Google (αν είναι ανοιχτό στις Ρυθμίσεις και επιτρέπεται)· σε αποτυχία, η δωρεάν υπηρεσία όπως πριν
+    const key = cur.googleKey && cur.googleKey();
+    if (key && !cur.googleDown) {
+      try { const g = await googleRoute(from, to, key); if (cur && cur.onGoogleRoute) cur.onGoogleRoute(); return g; }
+      catch (e) { if (cur) { cur.googleDown = true; if (cur.onGoogleFail) cur.onGoogleFail(e.message || String(e)); } }
+    }
     const coords = `${from.lng.toFixed(6)},${from.lat.toFixed(6)};${to.lng.toFixed(6)},${to.lat.toFixed(6)}`;
     const bear = heading != null ? `&bearings=${Math.round(heading)},60;` : '';
     const url = `${cur.osrm}/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true${bear}`;
@@ -327,6 +394,7 @@
 
   global.RootingNav = {
     start, stop, toggleMute, active: () => !!cur, arrived: () => !!(cur && cur.arrived),
+    googleRoute, _buildGoogleRoute: buildGoogleRoute, _decodePolyline: decodePolyline,
     // για δοκιμές
     _instruction: instruction, _buildRoute: buildRoute, _locate: locate, _fmtDist: fmtDist, _spokenDist: spokenDist
   };

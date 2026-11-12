@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '54';
+  const APP_VERSION = '55';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -195,6 +195,7 @@
   const METERS = {
     geo: { name: 'αναζητήσεις διευθύνσεων', free: 10000, limit: () => GOOGLE_MONTH_LIMIT, used: () => googleUsage(), price: 'περίπου 5 $ ανά 1.000 αναζητήσεις', alt: 'τη δωρεάν αναζήτηση (λιγότερο ακριβής)' },
     map: { name: 'ανοίγματα χάρτη', free: 10000, limit: () => MAP_MONTH_LIMIT, used: () => mapUsage(), price: 'περίπου 7 $ ανά 1.000 ανοίγματα', alt: 'τον δωρεάν χάρτη (χωρίς περιστροφή/κίνηση)' },
+    routes: { name: 'διαδρομές πλοήγησης', free: 10000, limit: () => ROUTES_MONTH_LIMIT, used: () => routesUsage(), price: 'περίπου 5 $ ανά 1.000 διαδρομές', alt: 'τις δωρεάν διαδρομές (μπορεί να αγνοούν μονόδρομους)' },
     vision: { name: 'εικόνες για ανάγνωση', free: 1000, limit: () => VISION_MONTH_LIMIT, used: () => visionUsage(), price: 'περίπου 1,50 $ ανά 1.000 εικόνες', alt: 'την ανάγνωση στο κινητό (όπως παλιά)' }
   };
   function paidState() { const p = S.settings.paid || {}; return p.month === monthKey() ? p : { month: monthKey() }; }
@@ -794,6 +795,7 @@
     if (driveOpen) closeDrive();
     closeModal();
     navStop = s;
+    if (S.settings.googleKey && S.settings.googleNav) paidGate('routes'); // στο όριο ρωτάει· ώσπου να απαντήσεις, δωρεάν διαδρομές
     $('navArrive').classList.add('hidden');
     document.querySelector('.nav-btns').classList.remove('arrived');
     renderNavUndo();
@@ -806,6 +808,9 @@
       dest: { lat: s.lat, lng: s.lng, title: title(s) },
       from: myPos, mv, osrm: OSRM, muted: !!S.settings.navMuted,
       getPos: () => getPosition(8000),
+      googleKey: () => (routesOn() ? S.settings.googleKey : null),
+      onGoogleRoute: countRoutes,
+      onGoogleFail: (m) => toast('Οι διαδρομές Google δεν δούλεψαν (' + String(m).slice(0, 70) + ') — συνεχίζω με τις δωρεάν'),
       onPos: (p) => { myPos = p; showMe(); rememberPos(); },
       onArrive: () => showArrive(s),
       onExit: () => { navStop = null; render(); setSheet('peek'); setTimeout(fitAll, 300); }
@@ -1627,8 +1632,8 @@
         </div>
         <p class="muted small" id="sGInfo"></p>
         <div class="paid-status">${ic('alert')} <b>Δικλείδα χρέωσης:</b> στο 80% του δωρεάν ορίου σε προειδοποιώ, και στο όριο σε ρωτάω αν θες να συνεχίσεις δωρεάν ή με χρέωση.
-          ${['geo', 'map', 'vision'].filter((k) => paidChoice(k)).map((k) => `<br>• ${METERS[k].name}: <b class="${paidChoice(k) === 'paid' ? 'fail-txt' : 'ok-txt'}">${paidChoice(k) === 'paid' ? 'συνεχίζω ΜΕ ΧΡΕΩΣΗ' : 'συνεχίζω δωρεάν'}</b> ως το τέλος του μήνα`).join('')}
-          ${['geo', 'map', 'vision'].some((k) => paidChoice(k)) ? '<br><button class="btn btn-ghost" id="sPaidReset" style="margin-top:6px">Αλλαγή επιλογής (θα με ξαναρωτήσει)</button>' : ''}</div>
+          ${['geo', 'map', 'vision', 'routes'].filter((k) => paidChoice(k)).map((k) => `<br>• ${METERS[k].name}: <b class="${paidChoice(k) === 'paid' ? 'fail-txt' : 'ok-txt'}">${paidChoice(k) === 'paid' ? 'συνεχίζω ΜΕ ΧΡΕΩΣΗ' : 'συνεχίζω δωρεάν'}</b> ως το τέλος του μήνα`).join('')}
+          ${['geo', 'map', 'vision', 'routes'].some((k) => paidChoice(k)) ? '<br><button class="btn btn-ghost" id="sPaidReset" style="margin-top:6px">Αλλαγή επιλογής (θα με ξαναρωτήσει)</button>' : ''}</div>
         <p class="muted small">Αυτόν τον μήνα: <b>${googleUsage()}</b> / 10.000 αναζητήσεις · <b>${mapUsage()}</b> / 10.000 ανοίγματα χάρτη (δωρεάν). Στις 9.500 η εφαρμογή γυρνάει μόνη της στα δωρεάν, για να μη χρεωθείς.</p>
         ${S.settings.googleKey ? `
         <div class="vision-box">
@@ -1636,6 +1641,12 @@
           <p class="muted small">Αυτόν τον μήνα: <b>${visionUsage()}</b> / 1.000 εικόνες (δωρεάν). Στις 950 γυρνάει μόνη της στην ανάγνωση του κινητού.</p>
           <button class="btn btn-ghost btn-block" id="sVisionTest">Δοκιμή ανάγνωσης Google</button>
           <p class="muted small" id="sVisionInfo"></p>
+        </div>
+        <div class="vision-box">
+          <label class="vision-row"><input id="sGNav" type="checkbox" ${S.settings.googleNav ? 'checked' : ''}> <span><b>Πλοήγηση με διαδρομές Google</b><br><small class="muted">Σωστοί μονόδρομοι και απαγορεύσεις στροφής. Ισχύει για την πλοήγηση μέσα στην εφαρμογή.</small></span></label>
+          <p class="muted small">Αυτόν τον μήνα: <b>${routesUsage()}</b> / 10.000 διαδρομές (δωρεάν). Στις 9.500 σε ρωτάω πριν συνεχίσω.</p>
+          <button class="btn btn-ghost btn-block" id="sGNavTest">Δοκιμή διαδρομών Google</button>
+          <p class="muted small" id="sGNavInfo"></p>
         </div>
         <label class="field" style="margin-top:10px"><span>Χάρτης</span>
           <select id="sMapEng"><option value="google">Google (περιστροφή, κίνηση)</option><option value="free">Δωρεάν (OpenStreetMap)</option></select></label>
@@ -1686,7 +1697,27 @@
         } catch (e) { toast('Το αρχείο δεν είναι αντίγραφο ασφαλείας του Rooting'); }
       };
       const pr = b.querySelector('#sPaidReset');
-      if (pr) pr.onclick = () => { ['geo', 'map', 'vision'].forEach((k) => setPaid(k, '')); toast('Εντάξει — θα σε ξαναρωτήσω στο όριο'); openSettings(false); };
+      if (pr) pr.onclick = () => { ['geo', 'map', 'vision', 'routes'].forEach((k) => setPaid(k, '')); toast('Εντάξει — θα σε ξαναρωτήσω στο όριο'); openSettings(false); };
+      const gnav = b.querySelector('#sGNav');
+      if (gnav) {
+        gnav.onchange = () => { S.settings.googleNav = gnav.checked; save(); };
+        b.querySelector('#sGNavTest').onclick = async () => {
+          const gi = b.querySelector('#sGNavInfo');
+          gi.textContent = 'Δοκιμή…';
+          try {
+            const a = myPos || S.lastPos || { lat: 35.3387, lng: 25.1442 };
+            const r = await RootingNav.googleRoute(a, { lat: a.lat + 0.008, lng: a.lng - 0.01 }, S.settings.googleKey);
+            countRoutes();
+            gi.innerHTML = `✅ Δουλεύει. Διαδρομή ${Math.round(r.total)} μ με ${r.steps.length} οδηγίες. Πρώτη: «${esc((r.steps[1] || r.steps[0]).text)}»`;
+            if (!gnav.checked) { gnav.checked = true; S.settings.googleNav = true; save(); }
+          } catch (e) {
+            const m = String(e.message || e);
+            gi.textContent = '❌ ' + (/has not been used|disabled|not enabled|SERVICE_DISABLED/i.test(m) ? 'Το Routes API δεν είναι ενεργοποιημένο στον λογαριασμό σου (βήμα 1).'
+              : /blocked|not authorized|referer|API key not valid|restrict/i.test(m) ? 'Το κλειδί δεν επιτρέπει το Routes API (βήμα 2: περιορισμοί κλειδιού).'
+              : /billing/i.test(m) ? 'Χρειάζεται ενεργή χρέωση στον λογαριασμό Google Cloud.' : '') + ' [' + m.slice(0, 140) + ']';
+          }
+        };
+      }
       const vis = b.querySelector('#sVision');
       if (vis) {
         vis.onchange = () => { S.settings.visionOcr = vis.checked; save(); };
@@ -2114,6 +2145,11 @@
 
   // ---------- Επιλογή χάρτη ----------
   const MAP_MONTH_LIMIT = 9500;
+  // Διαδρομές πλοήγησης από Google (Routes API): 10.000 δωρεάν τον μήνα -> σταματάμε στις 9.500
+  const ROUTES_MONTH_LIMIT = 9500;
+  function routesUsage() { const u = S.settings.routesUsage || {}; return u.month === monthKey() ? u.count : 0; }
+  function routesOn() { return !!S.settings.googleKey && !!S.settings.googleNav && (routesUsage() < ROUTES_MONTH_LIMIT || paidChoice('routes') === 'paid'); }
+  function countRoutes() { S.settings.routesUsage = { month: monthKey(), count: routesUsage() + 1 }; save(); warn80('routes'); }
   // Ανάγνωση screenshots με Google (Cloud Vision): 1.000 δωρεάν εικόνες τον μήνα -> σταματάμε στις 950
   const VISION_MONTH_LIMIT = 950;
   function visionUsage() { const u = S.settings.visionUsage || {}; return u.month === monthKey() ? u.count : 0; }
