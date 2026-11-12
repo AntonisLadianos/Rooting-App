@@ -618,3 +618,7 @@ body.navigating .modal { z-index: 1100; }
 .prio-badge { background: #1e40af; color: #fff; border-radius: 7px; padding: 1px 7px; font-size: 12px; }
 
 #sGNavInfo { overflow-wrap: anywhere; }
+
+/* ---- Παραδομένα / αποτυχημένα: καθαρά και ευανάγνωστα (για αντιγραφή στην εφαρμογή courier) ---- */
+.stop.done, .stop.failed { opacity: 1; }
+.stop.done .stop-title, .stop.failed .stop-title { text-decoration: none; color: var(--text); }
