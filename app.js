@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '53';
+  const APP_VERSION = '54';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -525,6 +525,16 @@
     while (k < legs.length) aligned.push(legs[k++]); // σκέλος προς το τέλος/επιστροφή
     Object.assign(S.route, { legs: aligned, geometry, approx, startedAt: Date.now(), pre: 0 });
     save(); render();
+    retryApprox();
+  }
+  // Διακεκομμένη γραμμή = ο server διαδρομών δεν απάντησε και δείχνουμε ευθείες. Ξαναδοκιμάζουμε μόνοι μας
+  // (15″, 30″, 1′, 2′, 4′) μέχρι να έρθει η κανονική διαδρομή.
+  let approxTries = 0, approxTimer = null;
+  function retryApprox() {
+    clearTimeout(approxTimer);
+    if (!S.route || !S.route.approx) { approxTries = 0; return; }
+    if (approxTries >= 5) return;
+    approxTimer = setTimeout(refreshLegs, 15000 * Math.pow(2, approxTries++));
   }
 
   // Τι απομένει σε όλο το δρομολόγιο: στάσεις, χρόνος (οδήγηση + χρόνος ανά στάση), χλμ
@@ -855,6 +865,7 @@
     S.lastDone = val ? { id: s.id, at: Date.now(), failed: false } : null;
     save(); render();
     if (wasFailed && !val) scheduleLegs();
+    else if (S.route && S.route.approx) { approxTries = 0; scheduleLegs(); } // με κάθε παράδοση ξαναζητάμε την κανονική διαδρομή
     if (val) {
       const next = orderedStops().find((x) => !x.done);
       if (next && mv) mv.panTo(next.lat, next.lng);
@@ -1893,6 +1904,7 @@
       save(); render(); fitAll();
       busy(false);
       toast(approxGeom ? 'Η διαδρομή υπολογίστηκε κατά προσέγγιση (πρόβλημα σύνδεσης με τον server δρομολόγησης).' : 'Η διαδρομή είναι έτοιμη!');
+      approxTries = 0; retryApprox();
       setSheet('peek'); setTimeout(fitAll, 320);
     } catch (e) {
       console.error(e);
@@ -2194,7 +2206,7 @@
   setSheet(S.route ? 'peek' : 'half', false);
   startMap().then(() => {
     render();
-    if (S.route && !S.route.legs) scheduleLegs(); // στατιστικά που χάθηκαν παλιότερα
+    if (S.route && (!S.route.legs || S.route.approx)) scheduleLegs(); // στατιστικά που χάθηκαν παλιότερα / διαδρομή κατά προσέγγιση
     // Άνοιγμα: πρώτα στην τελευταία γνωστή θέση, μετά στη σημερινή μόλις τη βρει το GPS
     if (S.lastPos) mv.setView(S.lastPos.lat, S.lastPos.lng, 15);
     else if (S.stops.length) fitAll();
