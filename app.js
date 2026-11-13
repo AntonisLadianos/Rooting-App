@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '59';
+  const APP_VERSION = '60';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -574,6 +574,37 @@
     return etas;
   }
 
+  // ---------- Αναζήτηση στα παραδομένα / αποτυχημένα ----------
+  // Γράφεις τα πρώτα γράμματα (οδού, ονόματος) ή ψηφία (αριθμός, τηλέφωνο) και μένουν μόνο όσα ταιριάζουν.
+  function searchKey(t) { return ' ' + String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ς/g, 'σ').replace(/[^\p{L}\d]+/gu, ' ').trim() + ' '; }
+  function applyDoneFilter() {
+    const inp = $('doneSearch');
+    const toks = searchKey(inp.value).trim().split(' ').filter(Boolean);
+    const on = toks.length > 0;
+    // κάθε λέξη που γράφεις πρέπει να είναι ΑΡΧΗ κάποιας λέξης της στάσης (τα ψηφία ταιριάζουν και μέσα σε τηλέφωνο)
+    const match = (q) => toks.every((t) => q.includes(' ' + t) || (/^\d{3,}$/.test(t) && q.includes(t)));
+    let shown = { done: 0, fail: 0 }, total = { done: 0, fail: 0 };
+    [['doneStops', 'done'], ['failStops', 'fail']].forEach(([id, k]) => {
+      $(id).querySelectorAll(':scope > li').forEach((li) => {
+        total[k]++;
+        const ok = !on || match(li.dataset.q || '');
+        li.classList.toggle('hidden', !ok);
+        if (ok) shown[k]++;
+      });
+    });
+    $('doneSummary').innerHTML = `${ic('check')} Παραδόθηκαν (${on ? shown.done + ' από ' : ''}${total.done})`;
+    $('failSummary').innerHTML = `${ic('x')} Αποτυχημένα (${on ? shown.fail + ' από ' : ''}${total.fail})`;
+    $('doneSearchClear').classList.toggle('hidden', !inp.value);
+    if (on) { $('doneBox').open = true; $('failBox').open = true; }
+    const info = $('doneSearchInfo');
+    info.classList.toggle('hidden', !on);
+    if (on) info.textContent = shown.done + shown.fail ? `Βρέθηκαν ${shown.done + shown.fail}` : 'Δεν βρέθηκε τίποτα — δοκίμασε λιγότερα γράμματα';
+  }
+  $('doneSearch').addEventListener('input', applyDoneFilter);
+  $('doneSearch').addEventListener('focus', () => { setSheet('full'); setTimeout(() => $('doneSearchWrap').scrollIntoView({ block: 'start', behavior: 'smooth' }), 250); });
+  $('doneSearch').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('doneSearch').blur(); } });
+  $('doneSearchClear').onclick = () => { $('doneSearch').value = ''; applyDoneFilter(); $('doneSearch').focus(); };
+
   function render() {
     const list = orderedStops();
     const etas = computeEtas(list);
@@ -604,13 +635,14 @@
           <span class="chev">›</span>
         </div>`;
       attachSwipe(li, s);
+      if (s.done) li.dataset.q = searchKey([title(s), s.label, whoText(s), s.note, (s.people || []).map((p) => p.name + ' ' + (p.phone || '')).join(' '), s.phone].join(' '));
       (s.failed ? failEl : (s.done ? doneEl : stopsEl)).appendChild(li);
     });
     const doneN = list.filter((s) => s.done && !s.failed).length, failN = list.filter((s) => s.failed).length;
     $('doneBox').classList.toggle('hidden', !doneN);
-    $('doneSummary').innerHTML = `${ic('check')} Παραδόθηκαν (${doneN})`;
     $('failBox').classList.toggle('hidden', !failN);
-    $('failSummary').innerHTML = `${ic('x')} Αποτυχημένα (${failN})`;
+    $('doneSearchWrap').classList.toggle('hidden', doneN + failN < 1);
+    applyDoneFilter();
     $('swipeHint').classList.toggle('hidden', !list.some((s) => !s.done));
 
     $('stopCount').textContent = S.stops.length;

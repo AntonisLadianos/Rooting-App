@@ -112,6 +112,13 @@
           <button id="btnClear" class="btn btn-link list-clear"><i data-ic="trash"></i> Καθαρισμός</button>
         </div>
         <ol id="stops" class="stops"></ol>
+        <!-- Αναζήτηση στα παραδομένα / αποτυχημένα (για το πέρασμα στην εφαρμογή courier) -->
+        <div id="doneSearchWrap" class="search-wrap done-search hidden">
+          <span class="search-ic"><i data-ic="search"></i></span>
+          <input id="doneSearch" type="text" inputmode="search" placeholder="Βρες παραδομένο / αποτυχημένο…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
+          <button id="doneSearchClear" class="done-search-clear hidden" aria-label="Καθαρισμός">✕</button>
+        </div>
+        <p id="doneSearchInfo" class="muted small done-search-info hidden"></p>
         <details id="failBox" class="done-box fail-box hidden" open>
           <summary id="failSummary">✗ Αποτυχημένα</summary>
           <ol id="failStops" class="stops"></ol>

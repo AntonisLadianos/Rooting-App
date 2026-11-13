@@ -643,3 +643,13 @@ body.navigating .modal { z-index: 1100; }
 .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--card); color: var(--text); }
 .leaflet-popup-content-wrapper { border-radius: 16px; }
 .leaflet-popup-content { margin: 14px; }
+
+/* ---- Αναζήτηση στα παραδομένα / αποτυχημένα ---- */
+.done-search { margin: 14px 0 4px; position: relative; }
+.done-search input { padding-right: 44px; }
+.done-search-clear { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 34px; height: 34px; border: 0; border-radius: 50%; background: var(--bg); color: var(--muted); font-size: 15px; cursor: pointer; }
+.done-search-clear.hidden, .done-search.hidden, .done-search-info.hidden { display: none; }
+.done-search-info { margin: 2px 4px 0; }
+.stops > li.hidden { display: none; }
+
+#doneSearch { padding-left: 42px; }
