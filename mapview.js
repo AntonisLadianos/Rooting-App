@@ -29,6 +29,16 @@
     d.textContent = text;
     return d;
   }
+  // Περιτύλιγμα για τις καρτέλες πάνω στον χάρτη: δικό μας κουμπί ✕ (φαίνεται σε ανοιχτό και σκούρο θέμα)
+  function popupWrap(element, onClose) {
+    const w = document.createElement('div');
+    w.className = 'map-popup-wrap';
+    const x = document.createElement('button');
+    x.className = 'mp-close'; x.type = 'button'; x.setAttribute('aria-label', 'Κλείσιμο'); x.textContent = '✕';
+    x.onclick = (e) => { e.stopPropagation(); onClose(); };
+    w.appendChild(x); w.appendChild(element);
+    return w;
+  }
   function meEl() {
     const d = document.createElement('div');
     d.className = 'me-dot';
@@ -123,8 +133,10 @@
       },
       popup(lat, lng, element) {
         if (info) info.close();
-        info = new InfoWindow({ content: element, position: { lat, lng } });
+        // headerDisabled: χωρίς τη λευκή κεφαλίδα/✕ της Google (βάζουμε δικό μας ✕)
+        info = new InfoWindow({ content: popupWrap(element, () => view.closePopup()), position: { lat, lng }, headerDisabled: true, maxWidth: 320 });
         info.open({ map });
+        if (!view._popupClick) view._popupClick = map.addListener('click', () => view.closePopup()); // πάτημα έξω = κλείσιμο
       },
       closePopup() { if (info) info.close(); },
       resetNorth() { map.moveCamera({ heading: 0, tilt: 0 }); },
@@ -187,7 +199,7 @@
         if (!me) me = L.circleMarker([pos.lat, pos.lng], { radius: 8, color: '#fff', weight: 3, fillColor: '#2563eb', fillOpacity: 1 }).addTo(map);
         else me.setLatLng([pos.lat, pos.lng]);
       },
-      popup(lat, lng, element) { L.popup().setLatLng([lat, lng]).setContent(element).openOn(map); },
+      popup(lat, lng, element) { L.popup({ closeButton: false, maxWidth: 320 }).setLatLng([lat, lng]).setContent(popupWrap(element, () => map.closePopup())).openOn(map); },
       closePopup() { map.closePopup(); },
       resetNorth() {}, onRotate() {}, setTraffic() {}, canSatellite: false, setSatellite() {},
       follow(p, heading) { map.setView([ahead(p, heading, 60).lat, ahead(p, heading, 60).lng], 17, { animate: true }); },
