@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '57';
+  const APP_VERSION = '58';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -791,7 +791,10 @@
     }
   }
 
+  // κλείνει την καρτέλα στάσης που μπορεί να έχει μείνει ανοιχτή πάνω στον χάρτη
+  function closeMapPopup() { try { if (mv) mv.closePopup(); } catch (e) { /* ignore */ } }
   function startInAppNav(s) {
+    closeMapPopup();
     if (driveOpen) closeDrive();
     closeModal();
     navStop = s;
@@ -862,6 +865,7 @@
 
   // ---------- Ενέργειες στάσεων ----------
   function markDone(id, val, undoable) {
+    closeMapPopup();
     const s = S.stops.find((x) => x.id === id);
     if (!s) return;
     if (undoable) offerUndo(val ? `✓ Παραδόθηκε: ${title(s).split(',')[0]}` : 'Η στάση επανήλθε στο δρομολόγιο');
@@ -881,6 +885,7 @@
   // Αποτυχία παράδοσης: βγαίνει από το δρομολόγιο (χωρίς να αλλάξει η σειρά των υπολοίπων),
   // κόκκινη πινέζα στον χάρτη, ενότητα «Αποτυχημένα»
   function markFailed(id) {
+    closeMapPopup();
     const s = S.stops.find((x) => x.id === id);
     if (!s) return;
     offerUndo(`✗ Αποτυχία: ${title(s).split(',')[0]}`);
@@ -1861,6 +1866,7 @@
   }
 
   async function optimize() {
+    closeMapPopup();
     const todo = orderedStops().filter((s) => !s.done);
     const doneList = orderedStops().filter((s) => s.done);
     if (!todo.length) return;
@@ -1971,6 +1977,7 @@
   document.addEventListener('visibilitychange', () => { if (driveOpen && document.visibilityState === 'visible') keepAwake(true); });
 
   function openDrive() {
+    closeMapPopup();
     if (!S.route) { toast('Κάνε πρώτα βελτιστοποίηση διαδρομής'); return; }
     driveOpen = true; $('drive').classList.remove('hidden'); keepAwake(true); renderDrive();
   }
