@@ -344,6 +344,9 @@
     const to = { lat: p.lat, lng: p.lng, head: head || 0 };
     // πρώτο στίγμα ή μεγάλο άλμα (π.χ. νέα διαδρομή): κατευθείαν εκεί
     if (!c.disp || dist(c.disp, to) > 120 || !global.requestAnimationFrame) { c.disp = to; c.glide = null; paint(); return; }
+    // σταματημένος (φανάρι, παράδοση): καμία σχεδίαση
+    const dh0 = Math.abs(((to.head - c.disp.head + 540) % 360) - 180);
+    if (dist(c.disp, to) < 1.5 && dh0 < 3) return;
     c.glide = { from: c.disp, to, t0: performance.now(), dur: 1000 };
     if (!c.raf) c.raf = requestAnimationFrame(glideFrame);
   }
@@ -353,6 +356,9 @@
     c.raf = null;
     const g = c.glide;
     if (!g) return;
+    // ~30 καρέ το δευτερόλεπτο αρκούν (μισή δουλειά για την κάρτα γραφικών από τα 60)
+    if (c.lastPaint && now - c.lastPaint < 30 && now - g.t0 < g.dur) { c.raf = requestAnimationFrame(glideFrame); return; }
+    c.lastPaint = now;
     const k = Math.min(1, (now - g.t0) / g.dur);
     const dh = ((g.to.head - g.from.head + 540) % 360) - 180;
     c.disp = { lat: g.from.lat + (g.to.lat - g.from.lat) * k, lng: g.from.lng + (g.to.lng - g.from.lng) * k, head: (g.from.head + dh * k + 360) % 360 };
@@ -363,7 +369,7 @@
     const c = cur;
     if (!c || !c.disp) return;
     if (c.mv.setMe) c.mv.setMe({ lat: c.disp.lat, lng: c.disp.lng });
-    if (!c.free && !c.arrived) c.mv.follow(c.disp, c.disp.head);
+    if (!c.free && !c.arrived) c.mv.follow(c.disp, c.disp.head, c.flat);
   }
 
   function arrive() {
@@ -381,7 +387,7 @@
   function focusDest() {
     const c = cur;
     if (!c || !c.mv.focusOn) return;
-    c.mv.focusOn(c.dest, c.head, 19.8);
+    c.mv.focusOn(c.dest, c.head, 19.8, c.flat);
   }
   function goFree() {
     if (!cur || !cur.route) return;
@@ -394,8 +400,8 @@
     c.free = false;
     el('navRecenter').classList.add('hidden');
     if (c.arrived) focusDest();
-    else if (c.disp) c.mv.follow(c.disp, c.disp.head);
-    else if (c.last) c.mv.follow(c.last, c.head);
+    else if (c.disp) c.mv.follow(c.disp, c.disp.head, c.flat);
+    else if (c.last) c.mv.follow(c.last, c.head, c.flat);
   }
   let touchOnMap = false, mouseOnMap = false;
   const onMap = (e) => !!(e.target && e.target.closest && e.target.closest('#map'));

@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '62';
+  const APP_VERSION = '63';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -104,12 +104,22 @@
     if (myPos && mv) mv.setMe(myPos);
   }
   let watchId = null;
+  // Εκτός πλοήγησης δεν χρειάζεται θέση κάθε δευτερόλεπτο: χαλαρή παρακολούθηση (λιγότερη μπαταρία).
+  // Στην πλοήγηση το GPS υψηλής ακρίβειας το κρατά το navigate.js, οπότε αυτή σταματά. Το ίδιο όταν η εφαρμογή δεν φαίνεται.
   function startWatch() {
     if (!navigator.geolocation || watchId != null) return;
+    if (window.RootingNav && RootingNav.active()) return;
+    if (document.visibilityState === 'hidden') return;
     watchId = navigator.geolocation.watchPosition((p) => {
       myPos = { lat: p.coords.latitude, lng: p.coords.longitude }; showMe(); rememberPos();
-    }, () => {}, { enableHighAccuracy: true, maximumAge: 15000 });
+    }, () => {}, { enableHighAccuracy: false, maximumAge: 30000 });
   }
+  function stopWatch() {
+    if (watchId == null) return;
+    try { navigator.geolocation.clearWatch(watchId); } catch (e) { /* ignore */ }
+    watchId = null;
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') stopWatch(); else if (mv) startWatch(); });
 
   // ---------- Γεωκωδικοποίηση ----------
   function photonLabel(p) {
@@ -831,6 +841,7 @@
     if (driveOpen) closeDrive();
     closeModal();
     navStop = s;
+    stopWatch(); // στην πλοήγηση τη θέση τη δίνει το navigate.js
     if (S.settings.googleKey && S.settings.googleNav) paidGate('routes'); // στο όριο ρωτάει· ώσπου να απαντήσεις, δωρεάν διαδρομές
     $('navArrive').classList.add('hidden');
     document.querySelector('.nav-btns').classList.remove('arrived');
@@ -842,14 +853,14 @@
     $('navWho').innerHTML = [who ? `<span class="who">${ic('user')} ${esc(who)}</span>` : '', s.pkgs ? `<b class="pkg-badge${s.pkgs > 1 ? ' multi' : ''}">${ic('package')} ${pkgsText(s.pkgs)}</b>` : ''].filter(Boolean).join('');
     RootingNav.start({
       dest: { lat: s.lat, lng: s.lng, title: title(s) },
-      from: myPos, mv, osrm: OSRM, muted: !!S.settings.navMuted,
+      from: myPos, mv, osrm: OSRM, muted: !!S.settings.navMuted, flat: !!S.settings.navFlat,
       getPos: () => getPosition(8000),
       googleKey: () => (routesOn() ? S.settings.googleKey : null),
       onGoogleRoute: countRoutes,
       onGoogleFail: (m) => toast('Οι διαδρομές Google δεν δούλεψαν (' + String(m).slice(0, 70) + ') — συνεχίζω με τις δωρεάν'),
       onPos: (p) => { myPos = p; showMe(); rememberPos(); },
       onArrive: () => showArrive(s),
-      onExit: () => { navStop = null; showMe(); render(); setSheet('peek'); setTimeout(fitAll, 300); }
+      onExit: () => { navStop = null; showMe(); startWatch(); render(); setSheet('peek'); setTimeout(fitAll, 300); }
     });
   }
   // Άφιξη: χωρίς αναδυόμενο παράθυρο (κρύβει τον χάρτη). Το ✓ της κάτω μπάρας γίνεται πράσινο
@@ -1657,6 +1668,7 @@
           <option value="waze">Waze</option>
           <option value="inapp">Μέσα στην εφαρμογή (με φωνή)</option>
         </select></label>
+      <label class="vision-row" style="margin:4px 0 12px"><input id="sNavFlat" type="checkbox" ${S.settings.navFlat ? 'checked' : ''}> <span><b>Απλός χάρτης στην πλοήγηση</b><br><small class="muted">Από πάνω, χωρίς κλίση και 3D κτίρια. Λιγότερη μπαταρία και ζέστη. Ισχύει από την επόμενη πλοήγηση.</small></span></label>
       <label class="field"><span>Χρόνος σε κάθε στάση (λεπτά)</span>
         <input id="sSvc" type="number" min="0" max="120" inputmode="numeric" value="${S.settings.serviceMin}"></label>
       ${g ? `<a class="btn btn-ghost btn-block" href="${esc(g)}" target="_blank" rel="noopener">${ic('globe')} Όλη η διαδρομή στο Google Maps (μέσω browser)</a><p class="muted small">Χρησιμοποίησέ το μόνο αν δεν ανοίγει η εφαρμογή Google Maps.</p>` : ''}
@@ -1778,6 +1790,7 @@
           }
         };
       }
+      b.querySelector('#sNavFlat').onchange = (e) => { S.settings.navFlat = e.target.checked; save(); };
       const sel = b.querySelector('#sNav');
       sel.value = S.settings.navApp;
       sel.onchange = () => { S.settings.navApp = sel.value; save(); render(); };

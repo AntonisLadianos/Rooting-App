@@ -67,9 +67,10 @@
     const view = {
       kind: 'google', scheme: scheme || 'FOLLOW_SYSTEM', canRotate: true, canTraffic: true, canSatellite: true, raw: map,
       setSatellite(on) { map.setMapTypeId(on ? 'hybrid' : 'roadmap'); },
-      follow(p, heading) { anim++; map.moveCamera({ center: ahead(p, heading, 70), heading: heading || 0, tilt: 50, zoom: 17.5 }); },
+      // flat = «απλός χάρτης»: από πάνω, χωρίς κλίση/3D κτίρια (λιγότερη μπαταρία)
+      follow(p, heading, flat) { anim++; map.moveCamera({ center: ahead(p, heading, flat ? 45 : 70), heading: heading || 0, tilt: flat ? 0 : 50, zoom: flat ? 17 : 17.5 }); },
       // ομαλό ζουμ πάνω σε ένα σημείο (π.χ. άφιξη στον προορισμό)
-      focusOn(p, heading, zoom) {
+      focusOn(p, heading, zoom, flat) {
         const my = ++anim, ms = 1400, t0 = performance.now();
         const c0 = map.getCenter(), z0 = map.getZoom() || 17, ti0 = map.getTilt() || 0, h0 = map.getHeading() || 0;
         const h1 = heading == null ? h0 : heading;
@@ -79,7 +80,7 @@
           if (my !== anim) return;
           const k = ease(Math.min(1, (now - t0) / ms));
           map.moveCamera({ center: { lat: c0.lat() + (p.lat - c0.lat()) * k, lng: c0.lng() + (p.lng - c0.lng()) * k },
-            zoom: z0 + ((zoom || 19.8) - z0) * k, tilt: ti0 + (45 - ti0) * k, heading: h0 + dh * k });
+            zoom: z0 + ((zoom || 19.8) - z0) * k, tilt: ti0 + ((flat ? 0 : 45) - ti0) * k, heading: h0 + dh * k });
           if (k < 1) requestAnimationFrame(step);
         };
         requestAnimationFrame(step);
