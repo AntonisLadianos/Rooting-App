@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '61';
+  const APP_VERSION = '62';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -100,6 +100,7 @@
     save();
   }
   function showMe() {
+    if (window.RootingNav && RootingNav.active()) return; // στην πλοήγηση το στίγμα το κινεί (ομαλά) το navigate.js
     if (myPos && mv) mv.setMe(myPos);
   }
   let watchId = null;
@@ -848,7 +849,7 @@
       onGoogleFail: (m) => toast('Οι διαδρομές Google δεν δούλεψαν (' + String(m).slice(0, 70) + ') — συνεχίζω με τις δωρεάν'),
       onPos: (p) => { myPos = p; showMe(); rememberPos(); },
       onArrive: () => showArrive(s),
-      onExit: () => { navStop = null; render(); setSheet('peek'); setTimeout(fitAll, 300); }
+      onExit: () => { navStop = null; showMe(); render(); setSheet('peek'); setTimeout(fitAll, 300); }
     });
   }
   // Άφιξη: χωρίς αναδυόμενο παράθυρο (κρύβει τον χάρτη). Το ✓ της κάτω μπάρας γίνεται πράσινο
@@ -2073,7 +2074,7 @@
       if (nn) navigateTo(nn);
     };
   }
-  $('btnDrive').onclick = openDrive;
+  if ($('btnDrive')) $('btnDrive').onclick = openDrive;
   $('dClose').onclick = closeDrive;
 
   // ---------- Κάρτα που σέρνεται (κάτω / μέση / πάνω) ----------

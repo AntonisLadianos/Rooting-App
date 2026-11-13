@@ -288,7 +288,15 @@
     c.head = head;
     // ο χρήστης κουνάει τον χάρτη: δεν τον ακολουθούμε· μετά από 20″ χωρίς άγγιγμα επιστρέφουμε μόνοι μας
     if (c.free && Date.now() - c.freeAt > 20000) recenter();
-    if (!c.free && !c.arrived) c.mv.follow(p, head);
+    // ομαλή κίνηση: το στίγμα «κουμπώνει» πάνω στη γραμμή της διαδρομής όταν είμαστε πάνω της, και γλιστράει ως εκεί
+    let target = p;
+    if (loc.off < 25) {
+      const a = r.pts[loc.idx], b = r.pts[Math.min(loc.idx + 1, r.pts.length - 1)];
+      const seg = r.cum[Math.min(loc.idx + 1, r.cum.length - 1)] - r.cum[loc.idx];
+      const t = seg > 0 ? Math.max(0, Math.min(1, (loc.along - r.cum[loc.idx]) / seg)) : 0;
+      target = { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
+    }
+    glideTo(target, head);
     if (c.arrived) return; // μετά την άφιξη η οθόνη μένει στο «Έφτασες» (ζουμ στον προορισμό)
 
     // εκτός διαδρομής -> επανυπολογισμός
@@ -329,6 +337,35 @@
     if (!c.arrived && (toDest < 35 || (remain < 30 && toDest < 80))) arrive();
   }
 
+  // ---------- Ομαλή κίνηση στίγματος/κάμερας ανάμεσα στα στίγματα του GPS (1 ανά δευτερόλεπτο) ----------
+  function glideTo(p, head) {
+    const c = cur;
+    if (!c) return;
+    const to = { lat: p.lat, lng: p.lng, head: head || 0 };
+    // πρώτο στίγμα ή μεγάλο άλμα (π.χ. νέα διαδρομή): κατευθείαν εκεί
+    if (!c.disp || dist(c.disp, to) > 120 || !global.requestAnimationFrame) { c.disp = to; c.glide = null; paint(); return; }
+    c.glide = { from: c.disp, to, t0: performance.now(), dur: 1000 };
+    if (!c.raf) c.raf = requestAnimationFrame(glideFrame);
+  }
+  function glideFrame(now) {
+    const c = cur;
+    if (!c) return;
+    c.raf = null;
+    const g = c.glide;
+    if (!g) return;
+    const k = Math.min(1, (now - g.t0) / g.dur);
+    const dh = ((g.to.head - g.from.head + 540) % 360) - 180;
+    c.disp = { lat: g.from.lat + (g.to.lat - g.from.lat) * k, lng: g.from.lng + (g.to.lng - g.from.lng) * k, head: (g.from.head + dh * k + 360) % 360 };
+    paint();
+    if (k < 1) c.raf = requestAnimationFrame(glideFrame); else c.glide = null;
+  }
+  function paint() {
+    const c = cur;
+    if (!c || !c.disp) return;
+    if (c.mv.setMe) c.mv.setMe({ lat: c.disp.lat, lng: c.disp.lng });
+    if (!c.free && !c.arrived) c.mv.follow(c.disp, c.disp.head);
+  }
+
   function arrive() {
     const c = cur;
     c.arrived = true;
@@ -357,6 +394,7 @@
     c.free = false;
     el('navRecenter').classList.add('hidden');
     if (c.arrived) focusDest();
+    else if (c.disp) c.mv.follow(c.disp, c.disp.head);
     else if (c.last) c.mv.follow(c.last, c.head);
   }
   let touchOnMap = false, mouseOnMap = false;
@@ -372,6 +410,7 @@
   function stop(silent) {
     if (!cur) return;
     try { if (cur.watch != null) navigator.geolocation.clearWatch(cur.watch); } catch (e) { /* ignore */ }
+    try { if (cur.raf) cancelAnimationFrame(cur.raf); } catch (e) { /* ignore */ }
     try { if (cur.wake) cur.wake.release(); } catch (e) { /* ignore */ }
     try { if (global.speechSynthesis) speechSynthesis.cancel(); } catch (e) { /* ignore */ }
     if (cur.mv) { cur.mv.setNavRoute(null); cur.mv.unfollow(); if (cur.mv.dimRoute) cur.mv.dimRoute(false); }

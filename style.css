@@ -653,3 +653,6 @@ body.navigating .modal { z-index: 1100; }
 .stops > li.hidden { display: none; }
 
 #doneSearch { padding-left: 42px; }
+
+/* χωρίς το κουμπί «Οδήγηση»: τρία κουμπιά στη σειρά */
+.chips { grid-template-columns: repeat(3, minmax(0, 1fr)); }

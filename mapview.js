@@ -136,7 +136,9 @@
         // headerDisabled: χωρίς τη λευκή κεφαλίδα/✕ της Google (βάζουμε δικό μας ✕)
         info = new InfoWindow({ content: popupWrap(element, () => view.closePopup()), position: { lat, lng }, headerDisabled: true, maxWidth: 320 });
         info.open({ map });
-        if (!view._popupClick) view._popupClick = map.addListener('click', () => view.closePopup()); // πάτημα έξω = κλείσιμο
+        view._popupAt = Date.now();
+        // πάτημα έξω = κλείσιμο (όχι το «άφημα» του δαχτύλου αμέσως μετά από παρατεταμένο πάτημα που την άνοιξε)
+        if (!view._popupClick) view._popupClick = map.addListener('click', () => { if (Date.now() - view._popupAt > 900) view.closePopup(); });
       },
       closePopup() { if (info) info.close(); },
       resetNorth() { map.moveCamera({ heading: 0, tilt: 0 }); },
@@ -199,10 +201,14 @@
         if (!me) me = L.circleMarker([pos.lat, pos.lng], { radius: 8, color: '#fff', weight: 3, fillColor: '#2563eb', fillOpacity: 1 }).addTo(map);
         else me.setLatLng([pos.lat, pos.lng]);
       },
-      popup(lat, lng, element) { L.popup({ closeButton: false, maxWidth: 320 }).setLatLng([lat, lng]).setContent(popupWrap(element, () => map.closePopup())).openOn(map); },
+      popup(lat, lng, element) {
+        L.popup({ closeButton: false, maxWidth: 320, closeOnClick: false }).setLatLng([lat, lng]).setContent(popupWrap(element, () => map.closePopup())).openOn(map);
+        this._popupAt = Date.now();
+        if (!this._popupClick) { this._popupClick = true; map.on('click', () => { if (Date.now() - this._popupAt > 900) map.closePopup(); }); }
+      },
       closePopup() { map.closePopup(); },
       resetNorth() {}, onRotate() {}, setTraffic() {}, canSatellite: false, setSatellite() {},
-      follow(p, heading) { map.setView([ahead(p, heading, 60).lat, ahead(p, heading, 60).lng], 17, { animate: true }); },
+      follow(p, heading) { const a = ahead(p, heading, 60); map.setView([a.lat, a.lng], 17, { animate: false }); }, // η ομαλή κίνηση γίνεται στο navigate.js
       unfollow() { map.setZoom(14); },
       focusOn(p, heading, zoom) { map.flyTo([p.lat, p.lng], Math.min(19, zoom || 19), { duration: 1.2 }); },
       setNavRoute(coords) {

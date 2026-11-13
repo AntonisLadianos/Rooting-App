@@ -2,7 +2,7 @@
 // (η αναζήτηση/δρομολόγηση θέλουν internet).
 //  • CACHE  : τα αρχεία της εφαρμογής — αλλάζει όνομα σε κάθε έκδοση
 //  • VENDOR : μεγάλα αρχεία που δεν αλλάζουν (ανάγνωση screenshots ~12 MB, χάρτης) — ΔΕΝ σβήνεται στις ενημερώσεις
-const CACHE = 'rooting-v61';
+const CACHE = 'rooting-v62';
 const VENDOR = 'rooting-vendor-1';
 const SHELL = [
   './', 'index.html', 'style.css', 'app.js', 'solver.js', 'ocr.js', 'geo.js', 'mapview.js', 'navigate.js', 'icons.js', 'manifest.webmanifest',
