@@ -143,6 +143,49 @@
     return p.slice(0, a).concat(p.slice(c), p.slice(b, c), p.slice(a, b));
   }
 
+  /*
+   * «Αφού περνάς, άφησέ την»: μετά τη βέλτιστη σειρά, φέρνει μπροστά όποια στάση χωράει νωρίτερα
+   * σχεδόν χωρίς επιπλέον χρόνο (ισοπαλίες: το δρομολόγιο ξαναπερνά από τον ίδιο δρόμο αργότερα).
+   *   eps    : μέγιστος επιπλέον χρόνος ανά μετακίνηση (δευτ.)
+   *   budget : μέγιστος συνολικός επιπλέον χρόνος (δευτ.)
+   */
+  function pullForward(D, order, mode, opts) {
+    opts = opts || {};
+    const eps = opts.eps == null ? 20 : opts.eps;
+    const n = D.length, endIdx = mode === 'fixed' ? n - 1 : -1;
+    const cost = (perm) => {
+      let c = D[0][perm[0]];
+      for (let i = 0; i < perm.length - 1; i++) c += D[perm[i]][perm[i + 1]];
+      const last = perm[perm.length - 1];
+      if (mode === 'cycle') c += D[last][0];
+      else if (mode === 'fixed') c += D[last][endIdx];
+      return c;
+    };
+    let cur = order.slice();
+    if (cur.length < 3) return cur;
+    const base = cost(cur);
+    const budget = opts.budget == null ? Math.max(60, base * 0.01) : opts.budget;
+    let curCost = base;
+    const t0 = Date.now();
+    for (let i = 0; i < cur.length - 1; i++) {
+      if (Date.now() - t0 > (opts.timeLimitMs || 400)) break;
+      // Από το σημείο που βρισκόμαστε (prev), ποια από τις επόμενες στάσεις συναντάμε πρώτη ΚΑΙ μπορεί να γίνει
+      // τώρα σχεδόν χωρίς επιπλέον χρόνο; (η τωρινή επόμενη έχει κόστος 0, άρα είναι πάντα υποψήφια)
+      const prev = i ? cur[i - 1] : 0;
+      let best = { d: 0, cand: null, near: D[prev][cur[i]] };
+      for (let j = i + 1; j < cur.length; j++) {
+        const near = D[prev][cur[j]];
+        if (near >= best.near) continue;
+        const cand = cur.slice(0, i).concat([cur[j]], cur.slice(i, j), cur.slice(j + 1));
+        const d = cost(cand) - curCost;
+        if (d <= eps && curCost + d - base <= budget) best = { d, cand, near };
+      }
+      if (best.cand) { cur = best.cand; curCost += best.d; }
+    }
+    return cur;
+  }
+
   global.solveRoute = solveRoute;
-  if (typeof module !== 'undefined') module.exports = { solveRoute };
+  global.pullForward = pullForward;
+  if (typeof module !== 'undefined') module.exports = { solveRoute, pullForward };
 })(typeof window !== 'undefined' ? window : globalThis);

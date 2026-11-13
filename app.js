@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '58';
+  const APP_VERSION = '59';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -1902,7 +1902,8 @@
       applyWalkMatrix(D, points);
       const hasPrio = todo.some((x) => x.prio);
       if (hasPrio) applyPrioMatrix(D, points, todo.length);
-      const orderIdx = solveRoute(D, realMode, { timeLimitMs: todo.length > 40 ? 3000 : 1500 });
+      let orderIdx = solveRoute(D, realMode, { timeLimitMs: todo.length > 40 ? 3000 : 1500 });
+      orderIdx = pullForward(D, orderIdx, realMode); // «αφού περνάς, άφησέ την»
       let orderedTodo = orderIdx.map((i) => points[i]);
       // δικλείδα: αν παρ' όλα αυτά κάτι βγήκε εκτός ομάδας, το ταξινομούμε (σταθερά) ανά ομάδα
       if (hasPrio && orderedTodo.some((x, k) => k && prioGroup(x) < prioGroup(orderedTodo[k - 1]))) {
