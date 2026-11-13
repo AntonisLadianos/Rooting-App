@@ -223,6 +223,9 @@
 
   function clean(line) {
     let s = line.replace(/µ/g, 'μ').replace(/\S*[\u1F00-\u1FFF]\S*/g, ' ').replace(/\s+/g, ' ').trim(); // «ἴνι», «{[᾿}» = σκουπίδια εικονιδίων
+    // «⚠ 2 πακέτα παράδοση»: κρατάμε τον αριθμό (αλλιώς το καθάρισμα παρακάτω τον πετάει μαζί με τα εικονίδια)
+    const pk = s.match(/([0-9ΊIl|]{1,2})\s*(πακ[εέ]τ.*)$/i);
+    if (pk) return pk[1] + ' ' + pk[2];
     // αφαίρεση «σκουπιδιών» από εικονίδια στην αρχή της γραμμής (π.χ. "ΟΦ ", "ς. ", "'. ")
     for (let k = 0; k < 2; k++) {
       s = s.replace(/^[^\p{L}\d(]+/u, '');
@@ -235,7 +238,7 @@
   }
 
   function digitsCount(s) { return (s.match(/\d/g) || []).length; }
-  function isPhoneLine(s) { return digitsCount(s) >= 10 && RE_PHONE.test(s.replace(/[\s-]/g, '')); }
+  function isPhoneLine(s) { return digitsCount(s) >= 10 && !isCode(s) && RE_PHONE.test(s.replace(/[\s-]/g, '')); } // όχι κωδικός «IPG - 2874356214"
   function normPhone(s) {
     const d = s.replace(/\D/g, '');
     const m = d.match(/(?:0030|30)?([26]\d{9})$/) || d.match(/([26]\d{9})/);
@@ -353,8 +356,9 @@
     if (!l) return 0;
     const m = l.match(/([0-9ΊIl|]{1,2})\s*πακ[εέ]τ/i);
     if (!m) return 1;
-    const n = parseInt(m[1].replace(/[ΊIl|]/g, '1'), 10);
-    return n > 0 && n < 50 ? n : 1;
+    let n = parseInt(m[1].replace(/[ΊIl|]/g, '1'), 10);
+    if (n >= 10) n = n % 10; // «82 πακέτα» = εικονίδιο κολλημένο στο 2 (10+ δέματα σε έναν πελάτη πρακτικά δεν υπάρχουν)
+    return n > 0 ? n : 1;
   }
   const RE_CODE = /^\S{1,5}\s*-+\s*-?\s*([\p{L}\d][\p{L}\d.)\]]{5,})/u;
   function codesOf(lines) {
@@ -417,7 +421,7 @@
         // κατάστημα: όνομα καταστήματος, η διεύθυνση γράφεται δύο φορές, ωράριο — κρατάμε την καλύτερη διεύθυνση
         const best = found.filter((f) => hasStreet(f.address)).sort((a, b) => (RE_POSTAL.test(b.address) ? 1 : 0) - (RE_POSTAL.test(a.address) ? 1 : 0))[0];
         const ph = lines.find(isPhoneLine);
-        if (best) cards.push({ pkgs: pkgCount(lines), codes: codesOf(lines), address: best.address, name: lines[1] && !/\d/.test(lines[1]) ? lines[1] : '',
+        if (best) cards.push({ pkgs: Math.max(pkgCount(lines), codesOf(lines).length), codes: codesOf(lines), address: best.address, name: lines[1] && !/\d/.test(lines[1]) ? lines[1] : '',
           phone: ph ? normPhone(ph) : '', closed: lines.some(isCardEnd) || !!ph, store: true });
         return;
       }
@@ -448,7 +452,7 @@
       if (!address || address.length < 5) { if (!found.length) return; address = found[0].address; }
       const it = found[0] || {};
       cards.push({
-        pkgs: pkgCount(lines), codes: codesOf(lines),
+        pkgs: Math.max(pkgCount(lines), codesOf(lines).length), codes: codesOf(lines),
         address,
         name: nameLine || it.name || '',
         phone: phoneLine ? normPhone(phoneLine) : (it.phone || ''),
