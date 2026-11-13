@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="el">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+  <title>Rooting</title>
+  <meta name="description" content="Βέλτιστη σειρά για τις διευθύνσεις των δρομολογίων σου">
+  <meta name="theme-color" content="#2563eb">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Rooting">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <div id="map"></div>
+
+    <!-- Κουμπιά πάνω στον χάρτη (πάνω δεξιά) -->
+    <div class="map-ctrls">
+      <button id="btnMenu" class="map-fab" title="Μενού" aria-label="Μενού" aria-expanded="false"><i data-ic="menu"></i></button>
+      <button id="btnLocate" class="map-fab" title="Η θέση μου" aria-label="Η θέση μου"><i data-ic="locate"></i></button>
+      <button id="btnNorth" class="map-fab hidden" title="Βορράς" aria-label="Επαναφορά προσανατολισμού"><i data-ic="compass"></i></button>
+      <div id="mapMenu" class="map-menu hidden" role="menu">
+        <button id="btnTraffic" class="mm-item hidden" role="menuitemcheckbox"><i data-ic="traffic"></i><span>Κίνηση</span><span class="mm-sw"></span></button>
+        <button id="btnSat" class="mm-item hidden" role="menuitemcheckbox"><i data-ic="layers"></i><span>Δορυφόρος</span><span class="mm-sw"></span></button>
+        <div class="mm-theme">
+          <div class="mm-label">Εμφάνιση</div>
+          <div class="mm-seg" id="themeSeg">
+            <button data-theme="auto"><i data-ic="contrast"></i> Αυτόματο</button>
+            <button data-theme="light"><i data-ic="sun"></i> Ανοιχτό</button>
+            <button data-theme="dark"><i data-ic="moon"></i> Σκούρο</button>
+          </div>
+        </div>
+        <button id="btnSettings" class="mm-item" role="menuitem"><i data-ic="settings"></i><span>Ρυθμίσεις</span><span class="chev">›</span></button>
+      </div>
+    </div>
+
+    <!-- Κάρτα που σέρνεται (κάτω / μέση / πάνω) -->
+    <section id="sheet" class="sheet">
+      <div class="sheet-handle" id="sheetHandle"><div class="grabber"></div></div>
+      <div class="sheet-body" id="sheetBody">
+
+        <!-- Επόμενη στάση (μετά τη βελτιστοποίηση) -->
+        <div id="nextCard" class="card next-card hidden">
+          <div class="next-top">
+            <span class="next-label">Επόμενη <span id="nextIdx"></span></span>
+            <span id="nextRemain" class="next-remain"></span>
+          </div>
+          <div class="progress"><div id="nextProgress"></div></div>
+          <div id="undoLast"></div>
+          <div class="next-title-row"><div id="nextTitle" class="next-title"></div>
+            <a id="btnCallNext" class="call-btn hidden" aria-label="Κλήση"><i data-ic="phone"></i></a></div>
+          <div id="nextPkgs" class="next-pkgs"></div>
+          <div id="nextSub" class="next-sub"></div>
+          <div class="next-actions" id="nextActions">
+            <a id="btnNavNext" class="btn btn-primary btn-lg"><i data-ic="nav"></i> Πλοήγηση</a>
+            <button id="btnDoneNext" class="btn btn-success btn-lg"><i data-ic="check"></i> Παραδόθηκε</button>
+          </div>
+          <div id="batchBar" class="batch-bar hidden">
+            <div id="batchText" class="batch-text"></div>
+            <div class="batch-btns">
+              <button id="btnBatchDone" class="btn btn-success"></button>
+              <button id="btnBatchCancel" class="btn btn-ghost" aria-label="Ακύρωση">✕</button>
+            </div>
+          </div>
+          <div class="chips">
+            <a id="btnFullRoute" class="chip"><i data-ic="map"></i> Google Maps</a>
+            <button id="btnFailNext" class="chip chip-fail"><i data-ic="x"></i> Αποτυχία</button>
+            <button id="btnReopt" class="chip"><i data-ic="zap"></i> Νέα σειρά</button>
+          </div>
+        </div>
+
+        <div id="summary" class="summary hidden"></div>
+
+        <!-- Προσθήκη διευθύνσεων -->
+        <div id="addBlock">
+          <div class="search-wrap">
+            <span class="search-ic"><i data-ic="search"></i></span>
+            <input id="search" type="search" placeholder="Πρόσθεσε διεύθυνση…" autocomplete="off" enterkeyhint="search">
+            <ul id="suggestions" class="suggestions hidden"></ul>
+          </div>
+          <div class="row-btns add-row">
+            <button id="btnShot" class="btn btn-primary"><i data-ic="camera"></i> Screenshot</button>
+            <button id="btnPaste" class="btn btn-ghost"><i data-ic="list"></i> Λίστα</button>
+          </div>
+          <input id="shotInput" type="file" accept="image/*" multiple hidden>
+        </div>
+
+        <!-- Αφετηρία / Τέλος -->
+        <div class="card endpoints">
+          <button id="startRow" class="endpoint">
+            <span class="dot dot-start"></span>
+            <span class="ep-text"><small>Αφετηρία</small><span id="startLabel">Τρέχουσα τοποθεσία</span></span>
+            <span class="chev">›</span>
+          </button>
+          <button id="endRow" class="endpoint">
+            <span class="dot dot-end"></span>
+            <span class="ep-text"><small>Τέλος</small><span id="endLabel">Όπου τελειώσει η τελευταία στάση</span></span>
+            <span class="chev">›</span>
+          </button>
+        </div>
+
+        <div class="list-head">
+          <h2>Στάσεις <span id="stopCount" class="badge">0</span></h2>
+          <span id="doneCount" class="muted"></span>
+          <button id="btnClear" class="btn btn-link list-clear"><i data-ic="trash"></i> Καθαρισμός</button>
+        </div>
+        <ol id="stops" class="stops"></ol>
+        <!-- Αναζήτηση στα παραδομένα / αποτυχημένα (για το πέρασμα στην εφαρμογή courier) -->
+        <div id="doneSearchWrap" class="search-wrap done-search hidden">
+          <span class="search-ic"><i data-ic="search"></i></span>
+          <input id="doneSearch" type="text" inputmode="search" placeholder="Βρες παραδομένο / αποτυχημένο…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
+          <button id="doneSearchClear" class="done-search-clear hidden" aria-label="Καθαρισμός">✕</button>
+        </div>
+        <p id="doneSearchInfo" class="muted small done-search-info hidden"></p>
+        <details id="failBox" class="done-box fail-box hidden" open>
+          <summary id="failSummary">✗ Αποτυχημένα</summary>
+          <ol id="failStops" class="stops"></ol>
+        </details>
+        <details id="doneBox" class="done-box hidden">
+          <summary id="doneSummary">Παραδόθηκαν</summary>
+          <ol id="doneStops" class="stops"></ol>
+        </details>
+        <p id="swipeHint" class="muted small swipe-hint hidden">Σύρε μια στάση δεξιά για «Παραδόθηκε», αριστερά για διαγραφή.</p>
+        <p id="emptyHint" class="empty">Πρόσθεσε τις διευθύνσεις σου από πάνω (γράφοντας, με screenshot ή με λίστα), ή πάτα παρατεταμένα πάνω στον χάρτη.</p>
+
+        <div class="bottom-spacer"></div>
+      </div>
+    </section>
+
+    <div id="optimizeBar">
+      <button id="btnOptimize" class="btn btn-primary btn-block btn-lg"><i data-ic="zap"></i> Βελτιστοποίηση διαδρομής</button>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-sheet">
+      <div class="modal-head">
+        <h3 id="modalTitle"></h3>
+        <button class="icon-btn" data-close aria-label="Κλείσιμο">✕</button>
+      </div>
+      <div id="modalBody" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Πλοήγηση μέσα στην εφαρμογή -->
+  <div id="nav" class="nav hidden">
+    <div class="nav-top">
+      <div class="nav-main">
+        <div id="navArrow" class="nav-arrow">↑</div>
+        <div class="nav-txt">
+          <div id="navDist" class="nav-dist"></div>
+          <div id="navText" class="nav-text"></div>
+        </div>
+      </div>
+      <div id="navThen" class="nav-then"></div>
+    </div>
+    <div id="navArrive" class="nav-arrive hidden">
+      <div class="na-label"><i data-ic="flag"></i> Έφτασες</div>
+      <div id="navArriveTitle" class="na-title"></div>
+      <div id="navArriveNote" class="na-note"></div>
+      <button id="navDone" class="btn btn-success na-big"><span><i data-ic="check"></i> Παραδόθηκε</span><small>και πάμε στην επόμενη</small></button>
+      <div class="na-row">
+        <button id="navFail" class="btn btn-fail"><i data-ic="x"></i> Αποτυχία</button>
+        <a id="navCall" class="btn btn-ghost hidden"><i data-ic="phone"></i> Κλήση</a>
+      </div>
+    </div>
+    <div class="nav-bottom">
+      <button id="navRecenter" class="nav-recenter hidden" aria-label="Επαναφορά στη θέση μου"><i data-ic="nav"></i> Επαναφορά</button>
+      <div class="nav-prog">
+        <div class="nav-prog-txt"><b id="navProgCount"></b><span id="navProgRest"></span></div>
+        <div class="progress"><div id="navProgBar"></div></div>
+      </div>
+      <div id="navUndo"></div>
+      <div class="nav-dest">
+        <div id="navDest" class="nav-dest-addr"></div>
+        <div id="navWho" class="nav-dest-who"></div>
+      </div>
+      <div class="nav-info">
+        <div><b id="navEta"></b><small>άφιξη</small></div>
+        <div class="nav-remain"><b id="navRemain"></b><small>απομένουν</small></div>
+      </div>
+      <div class="nav-btns">
+        <button id="navExit" class="btn nav-exit">Τέλος</button>
+        <a id="navCallBar" class="btn nav-ic nav-call hidden" aria-label="Κλήση"><i data-ic="phone"></i></a>
+        <button id="navMute" class="btn nav-ic" aria-label="Φωνή"><i data-ic="vol"></i></button>
+        <button id="navFailMan" class="btn nav-ic nav-fail" aria-label="Αποτυχία"><i data-ic="x"></i></button>
+        <button id="navDoneMan" class="btn nav-ic nav-ok" aria-label="Παραδόθηκε"><i data-ic="check"></i></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Λειτουργία οδήγησης -->
+  <div id="drive" class="drive hidden">
+    <div class="d-head">
+      <span id="dProgress"></span>
+      <button id="dClose" class="btn btn-ghost d-close"><i data-ic="x"></i> Έξοδος</button>
+    </div>
+    <div id="dBody" class="d-body"></div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <div id="busy" class="busy hidden"><div class="spinner"></div><div id="busyText">Υπολογισμός…</div></div>
+
+  <script src="icons.js"></script>
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="solver.js"></script>
+  <script src="geo.js"></script>
+  <script src="ocr.js"></script>
+  <script src="mapview.js"></script>
+  <script src="navigate.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

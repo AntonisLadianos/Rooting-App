@@ -1,0 +1,658 @@
+:root {
+  --bg: #f4f5f7;
+  --card: #ffffff;
+  --text: #111827;
+  --muted: #6b7280;
+  --line: #e5e7eb;
+  --primary: #2563eb;
+  --primary-press: #1d4ed8;
+  --success: #16a34a;
+  --danger: #dc2626;
+  --next: #f59e0b;
+  --radius: 14px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b0f17;
+    --card: #161b26;
+    --text: #f3f4f6;
+    --muted: #9ca3af;
+    --line: #273042;
+    --primary: #3b82f6;
+    --primary-press: #2563eb;
+  }
+}
+:root[data-theme="dark"] {
+    --bg: #0b0f17;
+    --card: #161b26;
+    --text: #f3f4f6;
+    --muted: #9ca3af;
+    --line: #273042;
+    --primary: #3b82f6;
+    --primary-press: #2563eb;
+  }
+:root[data-theme="dark"] { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; background: var(--bg); color: var(--text);
+  font: 16px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; }
+body { overscroll-behavior: none; position: fixed; inset: 0; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, textarea, .stop-full, .modal-body p { -webkit-user-select: text; user-select: text; }
+.hidden { display: none !important; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+
+#app { position: fixed; inset: 0; overflow: hidden; background: var(--bg); }
+/* Ο χάρτης πιάνει όλη την οθόνη· το κάτω όριό του ακολουθεί την κάρτα για να φαίνεται το λογότυπο/πνευματικά */
+#map { position: absolute; z-index: 0; left: 0; right: 0; top: 0; bottom: var(--map-bottom, 0px); background: #dfe3e8; transition: bottom .25s ease; touch-action: none; }
+.map-ctrls { position: absolute; right: 12px; top: calc(var(--safe-top) + 12px); z-index: 500; display: flex; flex-direction: column; gap: 10px; }
+.map-fab { width: 48px; height: 48px; border-radius: 50%; border: 0; background: var(--card); color: var(--text); font-size: 22px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.22); cursor: pointer; display: grid; place-items: center; padding: 0; }
+.map-fab.on { background: var(--primary); color: #fff; }
+#btnLocate { color: var(--primary); }
+
+/* ---- Κάρτα που σέρνεται ---- */
+.sheet { position: absolute; left: 0; right: 0; top: 0; height: 100%; z-index: 600; background: var(--bg);
+  border-radius: 20px 20px 0 0; box-shadow: 0 -6px 24px rgba(0,0,0,.16); display: flex; flex-direction: column;
+  transform: translateY(100%); will-change: transform; }
+.sheet.anim { transition: transform .28s cubic-bezier(.2,.8,.2,1); }
+.sheet-handle { flex: none; padding: 8px 0 6px; touch-action: none; cursor: grab; }
+.grabber { width: 44px; height: 5px; background: var(--muted); opacity: .45; border-radius: 3px; margin: 0 auto; }
+.sheet-body { flex: 1; min-height: 0; overflow-y: hidden; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  padding: 2px 16px 0; touch-action: pan-y; }
+.sheet.full .sheet-body { overflow-y: auto; }
+.bottom-spacer { height: calc(110px + var(--safe-bottom) + var(--sheet-top, 0px)); }
+body.has-route #optimizeBar { display: none; }
+
+.card { background: var(--card); border-radius: var(--radius); padding: 12px; margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+
+/* Επόμενη στάση */
+.next-card { border: 2px solid var(--next); }
+.next-label { font-size: 13px; font-weight: 600; color: var(--next); text-transform: uppercase; letter-spacing: .03em; }
+.next-title { font-size: 19px; font-weight: 700; margin: 4px 0 2px; }
+.next-sub { color: var(--muted); font-size: 14px; min-height: 1em; }
+.next-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+
+.summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; text-align: center; }
+.summary > div { background: var(--card); border-radius: var(--radius); padding: 10px 4px; }
+.summary b { display: block; font-size: 18px; }
+.summary small { color: var(--muted); font-size: 12px; }
+.summary .all-done { grid-column: 1 / -1; font-weight: 600; color: var(--success); }
+
+/* Κουμπιά */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 0; border-radius: 12px;
+  padding: 11px 14px; font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; color: var(--text);
+  background: var(--card); min-height: 44px; }
+.btn:disabled { opacity: .5; }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:active { background: var(--primary-press); }
+.btn-success { background: var(--success); color: #fff; }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-ghost { background: var(--card); color: var(--text); border: 1px solid var(--line); }
+.btn-link { background: none; color: var(--muted); font-weight: 500; font-size: 14px; min-height: 32px; padding: 6px; width: 100%; }
+.btn-lg { min-height: 52px; font-size: 17px; }
+.btn-block { display: flex; width: 100%; margin-bottom: 8px; }
+.row-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 12px; }
+.add-row { margin-top: 10px; }
+.next-more { margin-top: 10px; }
+.next-more .btn-block { margin-bottom: 8px; }
+.next-more .row-btns { margin: 0; }
+.list-head { gap: 8px; }
+.list-clear { width: auto; margin-left: auto; font-size: 14px; color: var(--danger); }
+.me-dot { width: 18px; height: 18px; border-radius: 50%; background: #2563eb; border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(37,99,235,.25), 0 1px 4px rgba(0,0,0,.4); transform: translateY(50%); }
+.pin-wrap { transform: translateY(50%); cursor: pointer; }
+.row-btns .btn { font-size: 14px; }
+.icon-btn { border: 0; background: none; font-size: 20px; color: var(--muted); width: 40px; height: 40px; cursor: pointer; }
+
+/* Αναζήτηση */
+.search-wrap { position: relative; }
+input[type=search], input[type=text], input[type=tel], input[type=number], select, textarea {
+  width: 100%; font: inherit; font-size: 16px; color: var(--text); background: var(--card);
+  border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; outline: none; -webkit-appearance: none; appearance: none; }
+input:focus, select:focus, textarea:focus { border-color: var(--primary); }
+textarea { resize: vertical; margin-bottom: 10px; }
+.suggestions { list-style: none; margin: 4px 0 0; padding: 0; background: var(--card); border-radius: 12px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.18); position: absolute; left: 0; right: 0; z-index: 50; max-height: 50vh; overflow-y: auto; }
+.suggestions.static { position: static; box-shadow: none; border: 1px solid var(--line); max-height: none; }
+.suggestions.static:empty { display: none; }
+.suggestions li { padding: 12px 14px; border-bottom: 1px solid var(--line); cursor: pointer; font-size: 15px; }
+.suggestions li:last-child { border-bottom: 0; }
+.suggestions li:active { background: var(--bg); }
+
+/* Αφετηρία / Τέλος */
+.endpoints { padding: 0; }
+.endpoint { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px; background: none; border: 0;
+  font: inherit; color: var(--text); text-align: left; cursor: pointer; }
+.endpoint + .endpoint { border-top: 1px solid var(--line); }
+.ep-text { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.ep-text small { color: var(--muted); font-size: 12px; }
+.ep-text span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+.dot-start { background: var(--success); }
+.dot-end { background: var(--danger); }
+.chev { color: var(--muted); font-size: 22px; flex: none; }
+
+/* Λίστα στάσεων */
+.list-head { display: flex; align-items: baseline; justify-content: space-between; margin: 6px 2px 8px; }
+.list-head h2 { font-size: 18px; margin: 0; }
+.badge { display: inline-block; background: var(--primary); color: #fff; font-size: 12px; border-radius: 10px; padding: 1px 8px; vertical-align: 2px; }
+.stops { list-style: none; margin: 0; padding: 0; }
+.stop { display: flex; align-items: center; gap: 12px; background: var(--card); border-radius: var(--radius);
+  padding: 12px 12px; min-height: 56px; margin-bottom: 8px; cursor: pointer; }
+.stop .num { flex: none; width: 30px; height: 30px; border-radius: 50%; background: var(--primary); color: #fff;
+  display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+.stop.current { outline: 2px solid var(--next); }
+.stop.current .num { background: var(--next); }
+.stop.done { opacity: .55; }
+.stop.done .num { background: var(--success); }
+.stop.done .stop-title { text-decoration: line-through; }
+.stop-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.stop-title { font-size: 15px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.stop-meta { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.empty { color: var(--muted); text-align: center; padding: 18px 8px; font-size: 14px; }
+
+#optimizeBar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 700; padding: 10px 16px calc(10px + var(--safe-bottom));
+  background: linear-gradient(to top, var(--bg) 70%, transparent); }
+
+/* Πινέζες χάρτη */
+.pin { width: 30px; height: 30px; border-radius: 50%; background: var(--primary); color: #fff; font: 700 13px/26px -apple-system, sans-serif;
+  text-align: center; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+.pin-next { background: var(--next); transform: scale(1.2); }
+.pin-done { background: var(--success); opacity: .7; }
+.pin-start { background: #111827; }
+.pin-end { background: var(--danger); }
+
+/* Modal */
+.modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: flex-end; }
+.modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.45); }
+.modal-sheet { position: relative; width: 100%; max-height: 88vh; overflow-y: auto; background: var(--bg);
+  border-radius: 18px 18px 0 0; padding: 6px 16px calc(20px + var(--safe-bottom)); animation: up .2s ease-out; }
+@keyframes up { from { transform: translateY(30px); opacity: .6; } to { transform: none; opacity: 1; } }
+.modal-head { display: flex; align-items: center; justify-content: space-between; }
+.modal-head h3 { margin: 10px 0; font-size: 18px; }
+.modal-body .btn-block { margin-bottom: 8px; }
+.stop-full { font-size: 17px; font-weight: 600; margin: 4px 0 12px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 8px; }
+.field { display: block; margin-bottom: 10px; }
+.field span { display: block; font-size: 13px; color: var(--muted); margin: 0 0 4px 2px; }
+.bulk-log ul { margin: 4px 0; padding-left: 20px; font-size: 14px; }
+.err { color: var(--danger); margin-bottom: 0; }
+
+/* Toast / busy */
+.toast { position: fixed; left: 16px; right: 16px; bottom: calc(90px + var(--safe-bottom)); z-index: 1100;
+  background: #111827; color: #fff; padding: 12px 14px; border-radius: 12px; font-size: 14px; text-align: center;
+  box-shadow: 0 6px 20px rgba(0,0,0,.3); }
+.busy { white-space: pre-line; position: fixed; inset: 0; z-index: 1200; background: rgba(0,0,0,.45); display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 14px; color: #fff; font-weight: 600; padding: 20px; text-align: center; }
+.spinner { width: 44px; height: 44px; border-radius: 50%; border: 4px solid rgba(255,255,255,.3); border-top-color: #fff; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.leaflet-control-attribution { font-size: 10px; }
+.leaflet-popup-content .btn { min-height: 36px; padding: 6px 12px; }
+
+/* Google Maps / οδήγηση */
+.btn-dark { background: #111827; color: #fff; }
+.drive { position: fixed; inset: 0; z-index: 1050; background: #0b0f17; color: #f3f4f6; display: flex; flex-direction: column;
+  padding: calc(var(--safe-top) + 10px) 16px calc(var(--safe-bottom) + 16px); overflow-y: auto; }
+.d-head { display: flex; justify-content: space-between; align-items: center; color: #9ca3af; font-weight: 600; }
+.d-close { background: #1f2937; color: #f3f4f6; border-color: #374151; min-height: 40px; }
+.d-body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 12px; }
+.d-label { color: #f59e0b; font-weight: 700; font-size: 16px; }
+.d-title { font-size: 30px; font-weight: 800; line-height: 1.2; }
+.d-note { font-size: 18px; color: #d1d5db; }
+.d-call { background: #1f2937; color: #f3f4f6; border-color: #374151; font-size: 18px; }
+.d-big { min-height: 120px; font-size: 28px; flex-direction: column; border-radius: 20px; margin-top: 8px; }
+.d-big small { font-size: 15px; font-weight: 500; opacity: .9; }
+.d-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.d-mid { min-height: 70px; font-size: 18px; border-radius: 16px; }
+.drive .btn-ghost.d-mid { background: #1f2937; color: #f3f4f6; border-color: #374151; }
+.d-wide { width: 100%; }
+.drive .btn-link { color: #9ca3af; }
+.d-finish { text-align: center; font-size: 30px; font-weight: 800; }
+
+/* Screenshot */
+.found-list { list-style: none; margin: 0 0 12px; padding: 0; }
+.found-list li { display: flex; gap: 10px; align-items: flex-start; background: var(--card); border-radius: 12px; padding: 10px; margin-bottom: 8px; }
+.found-list input[type=checkbox] { width: 24px; height: 24px; margin-top: 10px; flex: none; accent-color: var(--primary); }
+.found-body { flex: 1; min-width: 0; }
+.found-body input { padding: 8px 10px; font-size: 15px; }
+.found-body small { display: block; color: var(--muted); margin-top: 4px; font-size: 13px; }
+
+.google-card { margin: 4px 0 10px; }
+.google-card p { margin: 6px 0; }
+
+/* ---- Κάρτα επόμενης στάσης (καθαρότερη) ---- */
+.next-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.next-remain { font-size: 12.5px; color: var(--muted); text-align: right; }
+.progress { height: 5px; background: var(--line); border-radius: 3px; margin: 6px 0 8px; overflow: hidden; }
+.progress > div { height: 100%; width: 0; background: var(--success); border-radius: 3px; transition: width .3s; }
+.next-actions { grid-template-columns: 1fr 1fr; }
+.next-actions:has(.call-btn:not(.hidden)) { grid-template-columns: 1fr 1fr 56px; }
+.call-btn { padding: 0; font-size: 22px; }
+.chips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; }
+.chip { display: flex; align-items: center; justify-content: center; text-align: center; min-height: 44px; padding: 6px 4px;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; font-size: 12.5px;
+  font-weight: 600; line-height: 1.2; text-decoration: none; cursor: pointer; }
+.chip:active { background: var(--line); }
+.batch-bar { margin-top: 10px; padding: 10px; border-radius: 12px; background: rgba(37,99,235,.1); border: 1px solid rgba(37,99,235,.35); }
+.batch-text { font-size: 13.5px; font-weight: 600; margin-bottom: 8px; }
+.batch-btns { display: grid; grid-template-columns: 1fr 48px; gap: 8px; }
+
+/* ---- Λίστα με σύρσιμο ---- */
+.stop-row { position: relative; margin-bottom: 8px; border-radius: var(--radius); overflow: hidden; list-style: none; }
+.stop-row .stop { margin-bottom: 0; position: relative; z-index: 1; touch-action: pan-y; }
+.sw-bg { position: absolute; inset: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 18px;
+  font-weight: 700; color: #fff; background: var(--line); }
+.sw-bg span { opacity: 0; transition: opacity .15s; }
+.stop-row.sw-r .sw-bg { background: var(--success); }
+.stop-row.sw-r .sw-done { opacity: .7; }
+.stop-row.sw-l .sw-bg { background: var(--danger); }
+.stop-row.sw-l .sw-del { opacity: .7; }
+.stop-row.sw-armed .sw-bg span { opacity: 1; }
+.swipe-hint { text-align: center; margin: 2px 0 8px; }
+.done-box { margin: 6px 0 10px; }
+.done-box summary { cursor: pointer; padding: 10px 4px; font-weight: 600; color: var(--success); list-style: none; }
+.done-box summary::-webkit-details-marker { display: none; }
+.done-box summary::after { content: ' ›'; color: var(--muted); }
+.done-box[open] summary::after { content: ' ⌄'; }
+.stop.done { opacity: .6; }
+
+/* ---- Καρτούλα πινέζας ---- */
+.map-popup { min-width: 210px; max-width: 260px; font: 15px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #111827; }
+.mp-title { font-weight: 700; margin-bottom: 4px; }
+.mp-note { font-size: 13px; color: #4b5563; margin-bottom: 6px; }
+.mp-btns { display: flex; gap: 6px; margin-top: 8px; }
+.mp-btns .btn { min-height: 40px; padding: 6px 10px; font-size: 14px; flex: 1; }
+.mp-btns .btn-ghost { flex: 0 0 auto; background: #f3f4f6; color: #111827; border-color: #e5e7eb; }
+
+/* ---- Toast με «Αναίρεση» ---- */
+.toast.with-btn { display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: left; }
+.toast-btn { flex: none; background: none; border: 0; color: #93c5fd; font: inherit; font-weight: 700; padding: 6px 4px; cursor: pointer; }
+
+.next-top .next-label, .next-remain { white-space: nowrap; }
+.next-remain { overflow: hidden; text-overflow: ellipsis; }
+.list-head { display: flex; align-items: center; flex-wrap: nowrap; }
+.list-head h2 { white-space: nowrap; }
+#doneCount { white-space: nowrap; font-size: 14px; }
+.list-clear { display: inline-flex; white-space: nowrap; min-height: 36px; padding: 4px 6px; }
+
+.failed-list li { margin-bottom: 8px; }
+.sugg { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.sugg-btn { min-height: 32px; padding: 4px 10px; font-size: 13px; margin-left: 6px; }
+
+.ambig { display: inline-flex; align-items: center; gap: 4px; color: #b45309; font-weight: 600; }
+.chip-sm { border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 8px; padding: 2px 8px; font: inherit; font-size: 13px; min-height: 28px; cursor: pointer; }
+.chip-sm.on { background: #f59e0b; border-color: #f59e0b; color: #fff; }
+
+/* ---- Αποτυχία παράδοσης ---- */
+.pin-failed { background: var(--danger); }
+.btn-fail { background: rgba(220,38,38,.1); color: var(--danger); border: 1px solid rgba(220,38,38,.45); }
+.chip-fail { color: var(--danger); border-color: rgba(220,38,38,.45); }
+.drive .btn-fail { background: rgba(220,38,38,.18); color: #fca5a5; border-color: rgba(248,113,113,.5); }
+.fail-box summary { color: var(--danger); }
+.stop.failed { opacity: .75; }
+.stop.failed .num { background: var(--danger); }
+.stop.failed .stop-title { text-decoration: none; }
+.fail-txt { color: var(--danger); }
+
+/* ---- Αναίρεση τελευταίας στάσης ---- */
+.undo-last { width: 100%; min-height: 36px; margin: 2px 0 6px; padding: 6px 10px; font-size: 13.5px; background: var(--bg); border: 1px dashed var(--line); color: var(--text); justify-content: flex-start; }
+.undo-last small, .d-undo small { opacity: .7; font-weight: 500; margin-left: 4px; }
+.d-undo { width: 100%; min-height: 56px; font-size: 17px; background: #1f2937; color: #fde68a; border: 1px solid #374151; border-radius: 14px; }
+
+/* ---- Πλοήγηση μέσα στην εφαρμογή ---- */
+body.navigating #sheet, body.navigating #optimizeBar, body.navigating .map-ctrls { display: none !important; }
+body.navigating #map { bottom: calc(132px + var(--safe-bottom)) !important; }
+.nav { position: fixed; inset: 0; z-index: 1060; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; }
+.nav > * { pointer-events: auto; }
+.nav-top { margin: calc(var(--safe-top) + 8px) 10px 0; background: #0f5132; color: #fff; border-radius: 18px; padding: 14px 16px; box-shadow: 0 6px 20px rgba(0,0,0,.3); }
+.nav-main { display: flex; align-items: center; gap: 14px; }
+.nav-arrow { font-size: 54px; line-height: 1; min-width: 56px; text-align: center; font-weight: 700; }
+.nav-txt { min-width: 0; }
+.nav-dist { font-size: 30px; font-weight: 800; line-height: 1.1; }
+.nav-text { font-size: 18px; font-weight: 600; line-height: 1.25; margin-top: 2px; }
+.nav-then { font-size: 14px; opacity: .85; margin-top: 8px; border-top: 1px solid rgba(255,255,255,.25); padding-top: 6px; }
+.nav-then:empty { display: none; }
+.nav-bottom { background: var(--bg); border-radius: 20px 20px 0 0; padding: 10px 14px calc(12px + var(--safe-bottom)); box-shadow: 0 -6px 20px rgba(0,0,0,.18); }
+.nav-info { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.nav-info b { display: block; font-size: 22px; }
+.nav-info small { color: var(--muted); font-size: 12.5px; }
+.nav-remain { text-align: right; min-width: 0; }
+.nav-remain small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 62vw; }
+.nav-btns { display: grid; grid-template-columns: 1fr 64px 64px; gap: 8px; }
+.nav-exit { background: var(--danger); color: #fff; min-height: 52px; font-size: 17px; }
+.nav-ic { min-height: 52px; font-size: 22px; background: var(--card); border: 1px solid var(--line); }
+.nav-ok { color: var(--success); font-weight: 800; }
+#navUndo .undo-last { margin: 0 0 8px; }
+.nav-arrive { margin: 0 10px auto; margin-top: 10px; background: var(--card); color: var(--text); border-radius: 18px; padding: 16px; box-shadow: 0 6px 24px rgba(0,0,0,.3); }
+.na-label { color: var(--success); font-weight: 800; font-size: 15px; }
+.na-title { font-size: 22px; font-weight: 800; margin: 4px 0; }
+.na-note { color: var(--muted); font-size: 15px; margin-bottom: 8px; }
+.na-note:empty { display: none; }
+.na-big { width: 100%; min-height: 84px; font-size: 24px; flex-direction: column; border-radius: 16px; }
+.na-big small { font-size: 14px; font-weight: 500; opacity: .9; }
+.na-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.na-row .btn { min-height: 52px; }
+
+/* ---- Δέματα / πελάτες ανά στάση ---- */
+.pkg-badge { display: inline-block; background: var(--line); color: var(--text); border-radius: 8px; padding: 2px 8px; font-weight: 700; }
+.pkg-badge.multi, .found-list .pkg-badge { background: #f59e0b; color: #fff; }
+.next-pkgs { display: inline-block; margin: 2px 0 4px; font-weight: 700; font-size: 14px; color: var(--muted); }
+.next-pkgs:empty { display: none; }
+.next-pkgs.multi { background: #f59e0b; color: #fff; padding: 3px 10px; border-radius: 8px; font-size: 15px; }
+.merge-note { color: var(--primary); }
+.pkg-line { margin: -6px 0 10px; }
+.people { list-style: none; padding: 0; margin: 0 0 12px; }
+.people li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.people li .btn { min-height: 36px; padding: 4px 10px; font-size: 14px; }
+.drive .pkg-badge { font-size: 18px; padding: 4px 12px; }
+
+/* ================= Οριζόντια οθόνη ================= */
+@media (orientation: landscape) and (max-height: 560px) {
+  :root { --side: min(420px, 46vw); }
+  .sheet { transform: none !important; top: 0; bottom: 0; left: 0; right: auto; width: var(--side); height: 100%;
+    border-radius: 0 20px 20px 0; box-shadow: 6px 0 24px rgba(0,0,0,.16); padding-left: env(safe-area-inset-left, 0px); }
+  .sheet-handle { display: none; }
+  .sheet-body { overflow-y: auto !important; padding-top: calc(var(--safe-top) + 10px); }
+  #map { left: var(--side) !important; bottom: 0 !important; }
+  #optimizeBar { right: auto; width: var(--side); padding-left: calc(16px + env(safe-area-inset-left, 0px)); }
+  .bottom-spacer { height: calc(90px + var(--safe-bottom)); }
+  .map-ctrls { top: 10px; right: calc(10px + env(safe-area-inset-right, 0px)); gap: 8px; }
+  .map-fab { width: 44px; height: 44px; font-size: 20px; }
+  .toast { left: auto; right: 16px; width: min(420px, 50vw); bottom: 16px; }
+  .modal { align-items: center; justify-content: center; }
+  .modal-sheet { max-width: 600px; max-height: 94vh; border-radius: 18px; }
+
+  /* πλοήγηση: οδηγία πάνω αριστερά, στοιχεία/κουμπιά κάτω δεξιά, χάρτης παντού */
+  body.navigating #map { left: 0 !important; bottom: 0 !important; }
+  .nav { display: block; }
+  .nav-top { position: absolute; left: calc(10px + env(safe-area-inset-left, 0px)); top: 10px; width: min(460px, 48vw); margin: 0; padding: 10px 14px; }
+  .nav-arrow { font-size: 44px; min-width: 46px; }
+  .nav-dist { font-size: 26px; }
+  .nav-text { font-size: 16px; }
+  .nav-bottom { position: absolute; right: calc(10px + env(safe-area-inset-right, 0px)); bottom: 10px; width: min(380px, 44vw); border-radius: 18px; padding: 10px 12px; }
+  .nav-arrive { position: absolute; left: calc(10px + env(safe-area-inset-left, 0px)); top: 112px; bottom: 10px; width: min(460px, 48vw); margin: 0; overflow-y: auto; padding: 12px; }
+  .na-title { font-size: 18px; }
+  .na-big { min-height: 52px; font-size: 19px; border-radius: 12px; }
+  .na-big small { display: none; }
+  .na-title { margin: 2px 0; }
+  .na-note { margin-bottom: 6px; font-size: 14px; }
+  .na-row { margin-top: 6px; }
+  .na-row .btn { min-height: 44px; }
+
+  /* λειτουργία οδήγησης: στάση αριστερά, κουμπιά δεξιά */
+  .drive { padding: 10px calc(16px + env(safe-area-inset-right, 0px)) 10px calc(16px + env(safe-area-inset-left, 0px)); }
+  .d-body { display: grid; grid-template-columns: 1fr 1fr; grid-auto-flow: row dense; column-gap: 16px; row-gap: 8px; align-content: center; }
+  .d-body > * { grid-column: 1; }
+  .d-body > .d-big, .d-body > .d-row, .d-body > .d-wide, .d-body > .btn-fail { grid-column: 2; }
+  .d-title { font-size: 24px; }
+  .d-big { min-height: 84px; font-size: 22px; margin-top: 0; }
+  .d-mid { min-height: 52px; font-size: 16px; }
+}
+
+/* ---- Εικονίδια ---- */
+.ic { width: 1.15em; height: 1.15em; flex: none; vertical-align: -0.2em; display: inline-block; }
+[data-ic] { display: inline-flex; font-style: normal; }
+.btn .ic, .chip .ic { margin-right: 2px; }
+.map-fab .ic { width: 22px; height: 22px; }
+.chip { flex-direction: column; gap: 3px; }
+.chip .ic { width: 20px; height: 20px; margin: 0; }
+.stop-meta .ic { width: 13px; height: 13px; vertical-align: -2px; opacity: .8; }
+.stop-meta .sep { margin: 0 6px; opacity: .5; }
+.pkg-inline { color: #b45309; }
+.pkg-badge .ic { width: 15px; height: 15px; vertical-align: -2px; }
+.search-wrap { position: relative; }
+.search-ic { position: absolute; left: 13px; top: 13px; color: var(--muted); pointer-events: none; z-index: 1; }
+.search-ic .ic { width: 20px; height: 20px; }
+#search { padding-left: 42px; }
+.nav-flag { width: 44px; height: 44px; vertical-align: middle; }
+.nav-ic .ic { width: 24px; height: 24px; }
+.na-big span, .d-big span { display: inline-flex; align-items: center; gap: 8px; }
+.na-label .ic { width: 16px; height: 16px; }
+.done-box summary .ic { width: 16px; height: 16px; vertical-align: -3px; }
+.sw-bg .ic { width: 18px; height: 18px; vertical-align: -4px; }
+.list-clear .ic { width: 16px; height: 16px; }
+.mp-btns .btn .ic { width: 18px; height: 18px; margin: 0; }
+.mp-note .ic { width: 14px; height: 14px; vertical-align: -2px; }
+.people .ic { width: 15px; height: 15px; vertical-align: -2px; }
+.d-note .ic { width: 18px; height: 18px; vertical-align: -3px; }
+.found-body small .ic { width: 13px; height: 13px; vertical-align: -2px; }
+
+/* ---- κλήση μέσα στην πλοήγηση ---- */
+.nav-btns.with-call { grid-template-columns: 1fr 64px 64px 64px; }
+.nav-call { color: var(--success); text-decoration: none; }
+body.navigating .modal { z-index: 1100; }
+
+/* ---- Κουμπιά επόμενης στάσης: πάντα μέσα στην κάρτα ---- */
+.next-actions { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important; gap: 8px; }
+.next-actions .btn { min-width: 0; padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: clamp(14px, 4.2vw, 17px); }
+.sheet-body { overflow-x: hidden; }
+.card, .next-card { max-width: 100%; min-width: 0; }
+.chips { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.chip { min-width: 0; overflow: hidden; }
+@media (orientation: landscape) and (max-height: 560px) {
+  .next-actions .btn { font-size: 15px; min-height: 46px; }
+  .next-title { font-size: 17px; }
+}
+.list-head { flex-wrap: wrap; row-gap: 4px; min-width: 0; }
+.list-head .list-clear { margin-left: auto; }
+
+/* 📞 δίπλα στη διεύθυνση (στρογγυλό), ώστε τα 2 μεγάλα κουμπιά να έχουν όλο το πλάτος */
+.next-title-row { display: flex; align-items: flex-start; gap: 10px; }
+.next-title-row .next-title { flex: 1; min-width: 0; }
+.next-title-row .call-btn { flex: none; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center;
+  background: rgba(22,163,74,.12); color: var(--success); border: 1px solid rgba(22,163,74,.35); margin-top: 2px; text-decoration: none; }
+.next-title-row .call-btn.hidden { display: none; }
+.next-title-row .call-btn .ic { width: 22px; height: 22px; }
+.next-card { container-type: inline-size; }
+.next-actions .btn { font-size: clamp(13px, 5cqi, 17px); }
+@container (max-width: 250px) { .next-actions .btn .ic { display: none; } }
+.chips .chip { font-size: clamp(10.5px, 3.8cqi, 12.5px); padding: 6px 2px; }
+@container (max-width: 250px) { .chips { gap: 4px; } .chips .chip .ic { width: 17px; height: 17px; } }
+
+/* ---- Πλοήγηση: μεγάλη διεύθυνση, πελάτης, κουμπί αποτυχίας ---- */
+.nav-dest { margin: 2px 0 8px; }
+.nav-dest-addr { font-size: 20px; font-weight: 800; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.nav-dest-who { font-size: 15px; color: var(--muted); margin-top: 3px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.nav-dest-who:empty { display: none; }
+.nav-dest-who .ic { width: 15px; height: 15px; vertical-align: -2px; }
+.nav-info b { font-size: 19px; }
+.nav-btns { grid-template-columns: minmax(0, 1fr) 56px 56px 56px !important; }
+.nav-btns.with-call { grid-template-columns: minmax(0, 1fr) 56px 56px 56px 56px !important; }
+.nav-btns .nav-ic { min-width: 0; padding: 0; }
+.nav-exit { min-width: 0; padding: 0 8px; white-space: nowrap; overflow: hidden; }
+.nav-fail { color: var(--danger); }
+@media (orientation: landscape) and (max-height: 560px) {
+  .nav-dest-addr { font-size: 17px; -webkit-line-clamp: 1; }
+  .nav-dest { margin-bottom: 4px; }
+  .nav-info { margin-bottom: 6px; }
+  .nav-btns .nav-ic, .nav-exit { min-height: 46px; }
+}
+
+.nav-dest-who .who { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.nav-btns { grid-template-columns: minmax(0, 1fr) 52px 52px 52px !important; gap: 7px; }
+.nav-btns.with-call { grid-template-columns: minmax(0, 1fr) 52px 52px 52px 52px !important; }
+.nav-exit { font-size: 16px; }
+
+/* ---- Άφιξη: το ✓ γίνεται πράσινο και πάλλεται ---- */
+.nav-btns.arrived .nav-ok { background: var(--success); color: #fff; border-color: var(--success); animation: okpulse 1.4s ease-in-out infinite; }
+@keyframes okpulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(22,163,74,.55); } 50% { box-shadow: 0 0 0 9px rgba(22,163,74,0); } }
+
+/* ---- Πρόοδος ημέρας μέσα στην πλοήγηση ---- */
+.nav-prog { margin: -2px 0 10px; }
+.nav-prog-txt { font-size: 13.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nav-prog-txt b { color: var(--text); }
+.nav-prog-txt .ic { width: 13px; height: 13px; vertical-align: -2px; }
+.nav-prog .progress { height: 6px; margin: 5px 0 0; }
+@media (orientation: landscape) and (max-height: 560px) { .nav-prog { margin-bottom: 6px; } }
+
+/* ---- Κάτω μπάρα πλοήγησης: κουμπιά πιο κάτω, χωρίς άδειο κενό ---- */
+.nav-bottom { padding-bottom: max(8px, calc(var(--safe-bottom) - 14px)); }
+
+/* ---- Μενού χάρτη (☰) ---- */
+.map-ctrls { align-items: flex-end; }
+.map-menu { position: absolute; top: 0; right: 58px; width: 250px; background: var(--card); color: var(--text); border-radius: 16px;
+  box-shadow: 0 8px 28px rgba(0,0,0,.28); padding: 6px; display: flex; flex-direction: column; animation: mmIn .14s ease-out; transform-origin: top right; }
+.map-menu.hidden { display: none; }
+@keyframes mmIn { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: none; } }
+.mm-item { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; background: none; color: inherit; font: inherit; font-size: 16px;
+  padding: 12px 10px; border-radius: 10px; text-align: left; cursor: pointer; }
+.mm-item.hidden { display: none; }
+.mm-item:active { background: var(--line); }
+.mm-item > span:nth-of-type(1) { flex: 1; }
+.mm-item .ic { width: 20px; height: 20px; color: var(--muted); }
+.mm-item .chev { color: var(--muted); font-size: 20px; }
+.mm-sw { width: 40px; height: 24px; border-radius: 12px; background: var(--line); position: relative; flex: none; transition: background .15s; }
+.mm-sw::after { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform .15s; }
+.mm-item.on .mm-sw { background: var(--success); }
+.mm-item.on .mm-sw::after { transform: translateX(16px); }
+.mm-item.on .ic { color: var(--primary); }
+.mm-theme { padding: 8px 10px 10px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin: 4px 0; }
+.mm-label { font-size: 12.5px; color: var(--muted); margin-bottom: 6px; }
+.mm-seg { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--bg); border-radius: 10px; padding: 3px; gap: 3px; }
+.mm-seg button { border: 0; background: none; color: var(--text); font: inherit; font-size: 12.5px; padding: 7px 2px; border-radius: 8px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 2px; white-space: nowrap; }
+.mm-seg button .ic { width: 15px; height: 15px; }
+.mm-seg button.on { background: var(--card); box-shadow: 0 1px 4px rgba(0,0,0,.18); font-weight: 600; }
+#btnMenu.open { background: var(--primary); color: #fff; }
+/* σκούρος δωρεάν χάρτης (OpenStreetMap) */
+#map.dark-tiles .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.95) contrast(.88); }
+#map.dark-tiles { background: #1b1f27; }
+
+/* ---- Locker / Clever Point ---- */
+.hub-head { margin-bottom: 4px; font-size: 14.5px; }
+.hub-badge { display: inline-flex; align-items: center; gap: 4px; border-radius: 8px; padding: 2px 8px; color: #fff; font-size: 12.5px; font-weight: 700; vertical-align: 1px; }
+.hub-badge .ic { width: 13px; height: 13px; }
+.hub-locker { background: #7c3aed; }
+.hub-clever { background: #0891b2; }
+.hub-ask { color: var(--danger); font-weight: 600; }
+.hub-ask .ic, .hub-mem .ic { width: 13px; height: 13px; vertical-align: -2px; }
+.hub-mem { color: var(--success); font-weight: 600; }
+.pin.pin-hub { border-radius: 9px; }
+.pin.pin-locker { background: #7c3aed; }
+.pin.pin-clever { background: #0891b2; }
+.stop .num.num-locker { background: #7c3aed; border-radius: 9px; }
+.stop .num.num-clever { background: #0891b2; border-radius: 9px; }
+.stop.current .num.num-locker, .stop.current .num.num-clever { background: var(--next); }
+
+/* ---- Στάσεις στο ίδιο σημείο / κατά προσέγγιση ---- */
+.pin.pin-multi { width: auto; min-width: 30px; padding: 0 8px; border-radius: 15px; white-space: nowrap; }
+.pin-multi:not(.pin-next) { background: #1e40af; }
+.approx { color: #d97706; font-weight: 700; }
+.approx .ic { width: 13px; height: 13px; vertical-align: -2px; }
+.group-list { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.grp-item { display: flex !important; align-items: center; gap: 12px; text-align: left; justify-content: flex-start; }
+.grp-item .num { flex: none; width: 30px; height: 30px; border-radius: 50%; background: var(--primary); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 13px; }
+.grp-txt { display: flex; flex-direction: column; min-width: 0; }
+.grp-txt small { color: var(--muted); font-weight: 400; }
+.grp-txt small.approx { color: #d97706; font-weight: 600; }
+
+/* ---- iOS (εφαρμογή αρχικής οθόνης): η σελίδα μένει πιο κοντή από την οθόνη και αφήνει κενό κάτω.
+   Παράκαμψη από τις αναφορές WebKit (bugs 254868 / 301108): ύψος σε vh αντί για inset:0 ---- */
+@media (display-mode: standalone) {
+  html, body { height: 100vh; }
+  body, #app, .modal, .busy, .drive, .nav { bottom: auto; height: 100vh; }
+}
+
+/* ---- Έλεγχος πριν την προσθήκη ---- */
+.tally { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; font-size: 14.5px; }
+.tally-in { display: flex; align-items: center; gap: 8px; margin-top: 8px; color: var(--muted); font-size: 14px; }
+.tally-in input { width: 90px; font-size: 16px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text); }
+.tally-res { margin-top: 6px; font-weight: 600; font-size: 14px; }
+.tally-res:empty { display: none; }
+.tally-res .ic { width: 14px; height: 14px; vertical-align: -2px; }
+.ok-txt { color: var(--success); }
+.found-list li.needs-check { border: 2px solid #f59e0b; background: rgba(245,158,11,.08); }
+.check-row { margin-top: 6px; font-size: 13.5px; color: #b45309; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.check-row .ic { width: 14px; height: 14px; }
+
+/* ---- Πλοήγηση: επαναφορά μετά από κούνημα του χάρτη ---- */
+@media (orientation: portrait), (min-height: 561px) { .nav-bottom { position: relative; } }
+.nav-recenter { position: absolute; right: 12px; top: -62px; height: 48px; padding: 0 18px; border: 0; border-radius: 24px;
+  background: var(--primary); color: #fff; font: 600 16px -apple-system, sans-serif; display: inline-flex; align-items: center; gap: 8px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.3); cursor: pointer; }
+.nav-recenter.hidden { display: none; }
+.nav-recenter .ic { width: 20px; height: 20px; }
+
+/* ---- Ρυθμίσεις: ανάγνωση με Google ---- */
+.vision-box { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
+.vision-row { display: flex; gap: 10px; align-items: flex-start; }
+.vision-row input { width: 22px; height: 22px; flex: none; margin-top: 2px; }
+
+#sVisionInfo, #sGInfo { overflow-wrap: anywhere; }
+
+/* ---- Δικλείδα χρέωσης ---- */
+.paid-ask { position: fixed; inset: 0; z-index: 1300; background: rgba(0,0,0,.6); display: grid; place-items: center; padding: 18px; }
+.paid-box { background: var(--card); color: var(--text); border-radius: 18px; padding: 18px; max-width: 420px; width: 100%; box-shadow: 0 12px 40px rgba(0,0,0,.4); }
+.paid-box h3 { margin: 0 0 8px; font-size: 19px; color: #d97706; display: flex; align-items: center; gap: 8px; }
+.paid-box p { margin: 0 0 12px; }
+.paid-box .btn { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; padding: 12px; height: auto; }
+.paid-box .btn small { font-weight: 400; font-size: 12.5px; opacity: .85; }
+.paid-box .paid-yes { color: var(--danger); border: 1px solid var(--danger); }
+.paid-status { margin-top: 10px; padding: 10px; border-radius: 10px; background: var(--bg); font-size: 13.5px; color: var(--muted); }
+.paid-status .ic { width: 14px; height: 14px; vertical-align: -2px; color: #d97706; }
+
+.toast { z-index: 1250; }
+
+.tally-q { margin-top: 8px; font-size: 13px; color: var(--muted); }
+.tally-in { justify-content: space-between; }
+.tally-in span { flex: 1; }
+
+/* ---- Αποθηκευμένα σημεία (Αποθήκη, Σπίτι…) ---- */
+.place-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.place-chip { display: inline-flex; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 20px; overflow: hidden; }
+.place-chip button { border: 0; background: none; color: var(--text); font: inherit; padding: 8px 10px; cursor: pointer; }
+.place-go { font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+.place-go .ic { width: 16px; height: 16px; color: var(--primary); }
+.place-del { color: var(--muted) !important; border-left: 1px solid var(--line) !important; }
+.suggestions li.muted { color: var(--muted); cursor: default; }
+
+/* ---- Προτεραιότητα στάσης ---- */
+.prio-seg { margin-top: 4px; }
+.prio-seg button { font-size: 14.5px; padding: 9px 2px; }
+.prio-badge { background: #1e40af; color: #fff; border-radius: 7px; padding: 1px 7px; font-size: 12px; }
+
+#sGNavInfo { overflow-wrap: anywhere; }
+
+/* ---- Παραδομένα / αποτυχημένα: καθαρά και ευανάγνωστα (για αντιγραφή στην εφαρμογή courier) ---- */
+.stop.done, .stop.failed { opacity: 1; }
+.stop.done .stop-title, .stop.failed .stop-title { text-decoration: none; color: var(--text); }
+
+/* ---- Καρτέλα στάσης πάνω στον χάρτη: ακολουθεί το θέμα (ανοιχτό/σκούρο) ---- */
+.map-popup-wrap { position: relative; }
+.mp-close { position: absolute; top: -4px; right: -4px; width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--bg); color: var(--text);
+  font-size: 15px; line-height: 1; cursor: pointer; display: grid; place-items: center; z-index: 2; }
+.map-popup { color: var(--text); max-width: 290px; }
+.map-popup .mp-title { padding-right: 34px; color: var(--text); }
+.map-popup .mp-note { color: var(--muted); }
+.mp-btns { flex-wrap: wrap; }
+.mp-btns .btn { flex: 1 1 0; min-width: 44px; }
+.mp-btns .btn[data-a="done"] { flex: 1 1 100%; order: -1; }
+.mp-btns .btn-ghost { background: var(--bg); color: var(--text); border-color: var(--line); flex: 1 1 0; }
+/* Google: πλαίσιο και βελάκι της καρτέλας */
+.gm-style .gm-style-iw-c { background: var(--card) !important; color: var(--text); padding: 14px !important; border-radius: 16px !important; box-shadow: 0 8px 28px rgba(0,0,0,.35) !important; max-width: 330px !important; }
+.gm-style .gm-style-iw-d { overflow: visible !important; padding: 0 !important; max-height: none !important; }
+.gm-style .gm-style-iw-tc::after { background: var(--card) !important; }
+.gm-style .gm-style-iw-chr { display: none !important; }
+/* δωρεάν χάρτης */
+.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--card); color: var(--text); }
+.leaflet-popup-content-wrapper { border-radius: 16px; }
+.leaflet-popup-content { margin: 14px; }
+
+/* ---- Αναζήτηση στα παραδομένα / αποτυχημένα ---- */
+.done-search { margin: 14px 0 4px; position: relative; }
+.done-search input { padding-right: 44px; }
+.done-search-clear { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 34px; height: 34px; border: 0; border-radius: 50%; background: var(--bg); color: var(--muted); font-size: 15px; cursor: pointer; }
+.done-search-clear.hidden, .done-search.hidden, .done-search-info.hidden { display: none; }
+.done-search-info { margin: 2px 4px 0; }
+.stops > li.hidden { display: none; }
+
+#doneSearch { padding-left: 42px; }
+
+/* χωρίς το κουμπί «Οδήγηση»: τρία κουμπιά στη σειρά */
+.chips { grid-template-columns: repeat(3, minmax(0, 1fr)); }
