@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '65';
+  const APP_VERSION = '66';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -40,7 +40,7 @@
   (S.stops || []).forEach((st) => {
     if (st.orig && /[\u1F00-\u1FFF]/.test(st.orig)) st.orig = st.orig.replace(/\S*[\u1F00-\u1FFF]\S*/g, ' ').replace(/\s+,/g, ',').replace(/(,\s*)+,/g, ',').replace(/\s+/g, ' ').replace(/^[,\s]+|[,\s]+$/g, '').trim();
   });
-  let myPos = null;
+  let myPos = null, myHeading = null;
 
   function load() {
     try {
@@ -101,7 +101,7 @@
   }
   function showMe() {
     if (window.RootingNav && RootingNav.active()) return; // στην πλοήγηση το στίγμα το κινεί (ομαλά) το navigate.js
-    if (myPos && mv) mv.setMe(myPos);
+    if (myPos && mv) mv.setMe(myPos, myHeading);
   }
   let watchId = null;
   // Εκτός πλοήγησης δεν χρειάζεται θέση κάθε δευτερόλεπτο: χαλαρή παρακολούθηση (λιγότερη μπαταρία).
@@ -111,7 +111,10 @@
     if (window.RootingNav && RootingNav.active()) return;
     if (document.visibilityState === 'hidden') return;
     watchId = navigator.geolocation.watchPosition((p) => {
-      myPos = { lat: p.coords.latitude, lng: p.coords.longitude }; showMe(); rememberPos();
+      myPos = { lat: p.coords.latitude, lng: p.coords.longitude };
+      // κατεύθυνση μόνο όταν κινούμαστε (σταματημένο, το GPS δεν την ξέρει)
+      myHeading = (p.coords.heading != null && !isNaN(p.coords.heading) && p.coords.speed > 1.5) ? p.coords.heading : null;
+      showMe(); rememberPos();
     }, () => {}, { enableHighAccuracy: false, maximumAge: 30000 });
   }
   function stopWatch() {
@@ -858,7 +861,7 @@
       googleKey: () => (routesOn() ? S.settings.googleKey : null),
       onGoogleRoute: countRoutes,
       onGoogleFail: (m) => toast('Οι διαδρομές Google δεν δούλεψαν (' + String(m).slice(0, 70) + ') — συνεχίζω με τις δωρεάν'),
-      onPos: (p) => { myPos = p; showMe(); rememberPos(); },
+      onPos: (p) => { myPos = p; myHeading = null; showMe(); rememberPos(); },
       onArrive: () => showArrive(s),
       onExit: () => { navStop = null; showMe(); startWatch(); render(); setSheet('peek'); setTimeout(fitAll, 300); }
     });

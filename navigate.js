@@ -368,7 +368,7 @@
   function paint() {
     const c = cur;
     if (!c || !c.disp) return;
-    if (c.mv.setMe) c.mv.setMe({ lat: c.disp.lat, lng: c.disp.lng });
+    if (c.mv.setMe) c.mv.setMe({ lat: c.disp.lat, lng: c.disp.lng }, c.disp.head);
     if (!c.free && !c.arrived) c.mv.follow(c.disp, c.disp.head, c.flat);
   }
 

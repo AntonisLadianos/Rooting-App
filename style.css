@@ -691,3 +691,12 @@ body.navigating .modal { z-index: 1100; }
   /* έξω από τη στήλη (που κόβει ό,τι περισσεύει): κάτω δεξιά στον χάρτη */
   .nav-recenter { position: fixed; top: auto; bottom: 12px; right: calc(var(--navside) + env(safe-area-inset-right, 0px) + 12px); }
 }
+
+/* ---- Το στίγμα μου με διακριτικό κώνο κατεύθυνσης ---- */
+.me-wrap { position: relative; width: 18px; height: 18px; transform: translateY(50%); }
+.me-wrap .me-dot { position: absolute; inset: 0; transform: none; }
+.me-cone { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%; pointer-events: none;
+  background: conic-gradient(from -30deg, rgba(37,99,235,.55) 0deg 60deg, transparent 60deg);
+  -webkit-mask: radial-gradient(circle, #000 25%, transparent 70%); mask: radial-gradient(circle, #000 25%, transparent 70%); transform-origin: 50% 50%; }
+.me-cone-icon { background: none; border: 0; }
+.me-cone-icon .me-cone { left: 0; top: 0; margin: 0; }

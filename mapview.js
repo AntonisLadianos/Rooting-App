@@ -39,10 +39,19 @@
     w.appendChild(x); w.appendChild(element);
     return w;
   }
+  // το στίγμα μου: τελεία + διακριτικός «κώνος» που δείχνει προς τα πού κινούμαι (όταν είναι γνωστό)
   function meEl() {
-    const d = document.createElement('div');
-    d.className = 'me-dot';
-    return d;
+    const w = document.createElement('div');
+    w.className = 'me-wrap';
+    w.innerHTML = '<span class="me-cone" style="display:none"></span><span class="me-dot"></span>';
+    return w;
+  }
+  function setCone(el, deg) {
+    const c = el && el.querySelector('.me-cone');
+    if (!c) return;
+    if (deg == null || isNaN(deg)) { c.style.display = 'none'; return; }
+    c.style.display = '';
+    c.style.transform = 'rotate(' + deg.toFixed(1) + 'deg)';
   }
 
   // ---------------- Google ----------------
@@ -127,10 +136,12 @@
         } : Object.assign({ path, map }, routeStyle()));
       },
       dimRoute(on) { dim = !!on; if (line && line.get('strokeOpacity') !== 0) line.setOptions(routeStyle()); },
-      setMe(pos) {
+      setMe(pos, heading) {
         if (!pos) { if (me) me.map = null; me = null; return; }
         if (!me) me = new AdvancedMarkerElement({ map, position: pos, content: meEl(), zIndex: 999 });
         else me.position = pos;
+        // ο χάρτης μπορεί να είναι γυρισμένος: ο κώνος γυρίζει σε σχέση με την οθόνη
+        setCone(me.content, heading == null ? null : heading - (map.getHeading() || 0));
       },
       popup(lat, lng, element) {
         if (info) info.close();
@@ -199,10 +210,14 @@
         if (coords && coords.length) line = L.polyline(coords, Object.assign({ dashArray: dashed ? '8 8' : null }, this._dim ? { color: '#9ca3af', weight: 4, opacity: 0.55 } : { color: '#2563eb', weight: 5, opacity: 0.8 })).addTo(map);
       },
       dimRoute(on) { this._dim = !!on; if (line) line.setStyle(on ? { color: '#9ca3af', weight: 4, opacity: 0.55 } : { color: '#2563eb', weight: 5, opacity: 0.8 }); },
-      setMe(pos) {
-        if (!pos) { if (me) map.removeLayer(me); me = null; return; }
+      setMe(pos, heading) {
+        if (!pos) { if (me) map.removeLayer(me); me = null; if (this._cone) { map.removeLayer(this._cone); this._cone = null; } return; }
         if (!me) me = L.circleMarker([pos.lat, pos.lng], { radius: 8, color: '#fff', weight: 3, fillColor: '#2563eb', fillOpacity: 1 }).addTo(map);
         else me.setLatLng([pos.lat, pos.lng]);
+        if (!this._cone) this._cone = L.marker([pos.lat, pos.lng], { interactive: false, keyboard: false, zIndexOffset: -500,
+          icon: L.divIcon({ className: 'me-cone-icon', html: '<span class="me-cone" style="display:none"></span>', iconSize: [56, 56], iconAnchor: [28, 28] }) }).addTo(map);
+        else this._cone.setLatLng([pos.lat, pos.lng]);
+        setCone(this._cone.getElement(), heading);
       },
       popup(lat, lng, element) {
         L.popup({ closeButton: false, maxWidth: 320, closeOnClick: false }).setLatLng([lat, lng]).setContent(popupWrap(element, () => map.closePopup())).openOn(map);
