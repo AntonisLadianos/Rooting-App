@@ -169,6 +169,8 @@
     const map = L.map(el, { zoomControl: false, attributionControl: true }).setView([center.lat, center.lng], 12);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
     const group = L.layerGroup().addTo(map);
+    // όταν αλλάζει το μέγεθος του χάρτη (π.χ. πλοήγηση στο πλάι), ο δωρεάν χάρτης πρέπει να το μάθει
+    try { if (window.ResizeObserver) new ResizeObserver(() => map.invalidateSize({ animate: false })).observe(el); } catch (e) { /* ignore */ }
     let line = null, me = null;
     const icon = (text, cls) => { const w = String(text).length > 2 ? 16 + String(text).length * 8 : 30; return L.divIcon({ className: '', html: pinEl(text, cls).outerHTML, iconSize: [w, 30], iconAnchor: [w / 2, 15] }); };
     return {

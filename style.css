@@ -656,3 +656,34 @@ body.navigating .modal { z-index: 1100; }
 
 /* χωρίς το κουμπί «Οδήγηση»: τρία κουμπιά στη σειρά */
 .chips { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* ---- Πλοήγηση με το κινητό στο πλάι: χάρτης αριστερά (ολόκληρος, χωρίς τίποτα από πάνω), στοιχεία σε στήλη δεξιά ---- */
+@media (orientation: landscape) and (max-height: 560px) {
+  :root { --navside: min(330px, 38vw); }
+  body.navigating #map { left: 0 !important; bottom: 0 !important; right: calc(var(--navside) + env(safe-area-inset-right, 0px)) !important; }
+  .nav-top { width: auto; right: calc(var(--navside) + env(safe-area-inset-right, 0px) + 10px); max-width: 460px; }
+  .nav-bottom { top: 0; bottom: 0; right: 0; width: calc(var(--navside) + env(safe-area-inset-right, 0px)); border-radius: 18px 0 0 18px;
+    padding: 10px calc(12px + env(safe-area-inset-right, 0px)) 10px 12px; display: flex; flex-direction: column; box-shadow: -6px 0 20px rgba(0,0,0,.18); }
+  .nav-bottom .nav-btns { margin-top: auto; }
+  .nav-bottom .nav-dest-addr { -webkit-line-clamp: 2; font-size: 16px; }
+  #navUndo .undo-last { margin-bottom: 6px; padding-top: 6px; padding-bottom: 6px; font-size: 13px; }
+  .nav-recenter { top: auto; bottom: 12px; right: calc(100% + 12px); white-space: nowrap; }
+}
+@media (orientation: landscape) and (max-height: 560px) {
+  :root { --navside: clamp(250px, 38vw, 330px); }
+  .nav-bottom { overflow-y: auto; }
+  /* αναίρεση σε μία γραμμή */
+  #navUndo .undo-last { display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; }
+  #navUndo .undo-last > * { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+  #navUndo .undo-last small, #navUndo .undo-last .muted { display: none; }
+  /* ώρα άφιξης / απόσταση σε μία γραμμή */
+  .nav-bottom .nav-info { margin-bottom: 8px; white-space: nowrap; }
+  .nav-bottom .nav-info b { font-size: 17px; display: inline; }
+  .nav-bottom .nav-info small { display: none; }
+  .nav-bottom .nav-dest-who { font-size: 14px; }
+  /* κουμπιά: τα εικονίδια σε μία σειρά, το «Τέλος» από κάτω σε όλο το πλάτος */
+  .nav-bottom .nav-btns, .nav-bottom .nav-btns.with-call { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 6px; }
+  .nav-bottom .nav-btns.with-call { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+  .nav-bottom .nav-btns .nav-exit { grid-column: 1 / -1; order: 9; min-height: 40px; }
+  .nav-bottom .nav-btns .nav-ic { min-height: 44px; }
+}
