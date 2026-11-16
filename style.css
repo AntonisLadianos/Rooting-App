@@ -710,3 +710,11 @@ body.navigating .modal { z-index: 1100; }
   border-left: 8px solid transparent; border-right: 8px solid transparent; border-bottom: 13px solid #2563eb;
   filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff) drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
 .me-cone-icon .me-cone { left: 50%; top: 50%; margin: -42px 0 0 -42px; }
+
+/* ---- Βέλος πλοήγησης: λευκό με μπλε περίγραμμα, ξεχωρίζει πάνω στη μπλε γραμμή και σε ανοιχτό/σκούρο χάρτη ---- */
+.me-cone::after { display: none; }
+.me-cone svg { position: absolute; left: 50%; top: 50%; width: 38px; height: 38px; margin: -19px 0 0 -19px; overflow: visible;
+  fill: #ffffff; stroke: #1d4ed8; stroke-width: 2.4; stroke-linejoin: round; paint-order: stroke;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,.55)); }
+.me-cone::before { background: conic-gradient(from -32deg, rgba(255,255,255,.55) 0deg 64deg, transparent 64deg); }
+.me-wrap.has-head .me-dot { display: none; }
