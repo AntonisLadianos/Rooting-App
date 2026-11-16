@@ -700,3 +700,13 @@ body.navigating .modal { z-index: 1100; }
   -webkit-mask: radial-gradient(circle, #000 25%, transparent 70%); mask: radial-gradient(circle, #000 25%, transparent 70%); transform-origin: 50% 50%; }
 .me-cone-icon { background: none; border: 0; }
 .me-cone-icon .me-cone { left: 0; top: 0; margin: 0; }
+
+/* ---- Κώνος κατεύθυνσης, πιο ευδιάκριτος: «μύτη» πάνω στην τελεία + αχνή δέσμη ---- */
+.me-cone { width: 84px; height: 84px; margin: -42px 0 0 -42px; background: none; -webkit-mask: none; mask: none; border-radius: 0; }
+.me-cone::before { content: ''; position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(from -32deg, rgba(59,130,246,.75) 0deg 64deg, transparent 64deg);
+  -webkit-mask: radial-gradient(circle, #000 18%, transparent 68%); mask: radial-gradient(circle, #000 18%, transparent 68%); }
+.me-cone::after { content: ''; position: absolute; left: 50%; top: calc(50% - 22px); transform: translateX(-50%);
+  border-left: 8px solid transparent; border-right: 8px solid transparent; border-bottom: 13px solid #2563eb;
+  filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff) drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
+.me-cone-icon .me-cone { left: 50%; top: 50%; margin: -42px 0 0 -42px; }
