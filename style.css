@@ -687,3 +687,7 @@ body.navigating .modal { z-index: 1100; }
   .nav-bottom .nav-btns .nav-exit { grid-column: 1 / -1; order: 9; min-height: 40px; }
   .nav-bottom .nav-btns .nav-ic { min-height: 44px; }
 }
+@media (orientation: landscape) and (max-height: 560px) {
+  /* έξω από τη στήλη (που κόβει ό,τι περισσεύει): κάτω δεξιά στον χάρτη */
+  .nav-recenter { position: fixed; top: auto; bottom: 12px; right: calc(var(--navside) + env(safe-area-inset-right, 0px) + 12px); }
+}
