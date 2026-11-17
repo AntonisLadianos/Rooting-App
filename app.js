@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '69';
+  const APP_VERSION = '70';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -635,13 +635,13 @@
       if (s.prio && !s.done) meta.push(`<b class="prio-badge">${s.prio === 'first' ? 'πρώτα' : 'τελευταία'}</b>`);
       if (s.exact === false && !s.done) meta.push(`<b class="approx">${ic('alert')} κατά προσέγγιση</b>`);
       if (s.pkgs > 1) meta.push(`<b class="pkg-inline">${ic('package')} ${pkgsText(s.pkgs)}</b>`);
-      if (whoText(s)) meta.push(`${ic(s.hub || s.pickup ? 'home' : 'user')} ${esc(whoText(s))}`);
+      if (whoText(s)) meta.push(`${ic(s.hub || s.pickup || s.store ? 'home' : 'user')} ${esc(whoText(s))}`);
       if (s.note) meta.push(`${ic('note')} ${esc(s.note)}`);
       if (s.phone) meta.push(`${ic('phone')} ${esc(s.phone)}`);
       li.innerHTML = `
         <div class="sw-bg"><span class="sw-done">${s.done ? ic('restore') + ' Επαναφορά' : ic('check') + ' Παραδόθηκε'}</span><span class="sw-del">${ic('trash')} Διαγραφή</span></div>
         <div class="stop${s.done ? ' done' : ''}${s.failed ? ' failed' : ''}${nextStop && nextStop.id === s.id ? ' current' : ''}">
-          <span class="num${s.hub && !s.done ? ' num-' + s.hub.kind : (s.pickup && !s.done ? ' num-pickup' : '')}">${s.failed ? '✗' : (s.done ? '✓' : (S.route ? i + 1 : '•'))}</span>
+          <span class="num${s.hub && !s.done ? ' num-' + s.hub.kind : (s.pickup && !s.done ? ' num-pickup' : (s.store && !s.done ? ' num-store' : ''))}">${s.failed ? '✗' : (s.done ? '✓' : (S.route ? i + 1 : '•'))}</span>
           <span class="stop-body">
             <span class="stop-title">${esc(title(s))}</span>
             ${meta.length ? `<span class="stop-meta">${meta.join('<span class="sep">·</span>')}</span>` : ''}
@@ -740,7 +740,7 @@
       const isNext = nextStop && nextStop.id === s.id;
       const it = {
         lat: s.lat, lng: s.lng, text: s.failed ? '✗' : (s.done ? '✓' : (S.route ? String(i + 1) : '•')),
-        cls: s.failed ? 'pin-failed' : (s.done ? 'pin-done' : (isNext ? 'pin-next' : (s.hub ? 'pin-hub pin-' + s.hub.kind : (s.pickup ? 'pin-hub pin-pickup' : '')))), title: title(s),
+        cls: s.failed ? 'pin-failed' : (s.done ? 'pin-done' : (isNext ? 'pin-next' : (s.hub ? 'pin-hub pin-' + s.hub.kind : (s.pickup ? 'pin-hub pin-pickup' : (s.store ? 'pin-hub pin-store' : ''))))), title: title(s),
         z: isNext ? 50 : (s.done ? 1 : 10), onClick: () => stopPopup(s.id)
       };
       if (s.done) items.push(it); else pend.push({ it, s, i, isNext });
@@ -1370,7 +1370,7 @@
       if (e.pickup) { S.stops.push(pickupStop(e, r)); added++; return; }
       const people = (e.people || []).map((p) => ({ name: p.name, phone: p.phone, pkgs: p.pkgs || 1 }));
       S.stops.push({ id: uid(), label: r.label, lat: r.lat, lng: r.lng, note: people.length ? '' : (e.name || ''), phone: e.phone || '', orig: e.addr, exact: r.exact, done: false,
-        pkgs: e.pkgs || (people.length ? people.reduce((a, p) => a + p.pkgs, 0) : undefined), people: people.length ? people : undefined, codes: e.codes || undefined });
+        pkgs: e.pkgs || (people.length ? people.reduce((a, p) => a + p.pkgs, 0) : undefined), people: people.length ? people : undefined, codes: e.codes || undefined, store: e.store || undefined });
       added++;
     });
     if (added) { invalidateRoute(); save(); render(); fitAll(); }
@@ -1505,6 +1505,7 @@
   // «Μαρία (2) · Νίκος (1)» ή η σημείωση για παλιές στάσεις
   function whoText(s) {
     if (s.hub) return hubKind(s.hub) + (s.hub.name ? ' · ' + s.hub.name : '');
+    if (s.store) { const pp = (s.people || []).filter((p) => p.name); const nm = pp.length ? pp[0].name : (s.note || ''); return 'Κατάστημα' + (nm ? ' · ' + nm : '') + (s.pkgs > 1 ? ` (${s.pkgs})` : ''); }
     if (s.pickup) return 'Παραλαβή' + (s.pickup.window ? ' ' + s.pickup.window : '') + (s.pickup.name ? ' · ' + s.pickup.name : '');
     const pp = (s.people || []).filter((p) => p.name);
     if (!pp.length) return '';
@@ -1533,6 +1534,7 @@
           <input type="checkbox" id="fc${i}" ${it.dup || it.fragment ? '' : 'checked'}>
           <div class="found-body">
             ${it.hub ? `<div class="hub-head"><b class="hub-badge hub-${it.hub.kind}">${ic('home')} ${hubKind(it.hub)}</b> <b>${esc(it.hub.name || '')}</b></div>` : ''}
+            ${it.store && !it.pickup && !it.hub ? `<div class="hub-head"><b class="hub-badge hub-store">${ic('home')} Παράδοση σε κατάστημα</b></div>` : ''}
             ${it.pickup ? `<div class="hub-head"><b class="hub-badge hub-pickup">${ic('home')} Παραλαβή${it.pickup.window ? ' ' + esc(it.pickup.window) : ''}</b> <b>${esc(it.pickup.name || '')}</b></div>` : ''}
             <input type="text" id="fa${i}" value="${esc(it.hub ? ((hubMem(it.hub) || {}).addr || '') : it.address)}"${it.hub ? ` placeholder="Γράψε τη διεύθυνση του ${hubKind(it.hub)}"` : ''}>
             <small id="fs${i}">${it.pickup ? [it.pickup.pkgs ? `<b class="pkg-badge">${ic('package')} παραλαβή ${it.pickup.pkgs} ${it.pickup.pkgs === 1 ? 'πακέτου' : 'πακέτων'}</b>` : '', it.phone ? ic('phone') + ' ' + esc(it.phone) : '', esc(it.pickup.info || ''), it.dup ? '<b>υπάρχει ήδη</b>' : ''].filter(Boolean).join(' · ') : it.hub ? [it.hub.deliver ? `<b class="pkg-badge">${ic('package')} ${pkgsText(it.hub.deliver)}</b>` : '', esc(hubNote(it.hub)),
@@ -1637,7 +1639,7 @@
         if (hubsKnown) invalidateRoute();
         merged += hubsKnown;
         if (merged) { save(); render(); }
-        const out = await geocodeBatch(chosen.filter((x) => !x.it.mergeInto && !x.known).map((x) => ({ addr: x.addr, name: x.it.name, phone: x.it.phone, pkgs: x.it.pkgs, people: x.it.people, codes: x.it.codes, hub: x.it.hub, pickup: x.it.pickup })), (t) => { btn.textContent = t; });
+        const out = await geocodeBatch(chosen.filter((x) => !x.it.mergeInto && !x.known).map((x) => ({ addr: x.addr, name: x.it.name, phone: x.it.phone, pkgs: x.it.pkgs, people: x.it.people, codes: x.it.codes, hub: x.it.hub, pickup: x.it.pickup, store: x.it.store })), (t) => { btn.textContent = t; });
         out.added += merged;
         btn.disabled = false; btn.textContent = 'Προσθήκη';
         showBatchResult(b.querySelector('#foundLog'), btn, out);

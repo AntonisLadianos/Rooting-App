@@ -21,6 +21,7 @@ function pipeline(images) {
     people: (g.people || []).map((p) => ({ name: p.name, phone: p.phone, pkgs: p.pkgs })),
     hub: g.hub ? { kind: g.hub.kind, name: g.hub.name, deliver: g.hub.deliver, pickup: g.hub.pickup, ret: g.hub.ret } : undefined,
     pickup: g.pickup ? { name: g.pickup.name, window: g.pickup.window, pkgs: g.pickup.pkgs, info: g.pickup.info, phone: g.phone } : undefined,
+    store: g.store ? true : undefined,
     check: g.check ? true : undefined
   }));
 }

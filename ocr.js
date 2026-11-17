@@ -543,6 +543,7 @@
       lastOpen = null;
       img.cards.forEach((c, i) => {
         const x = { address: c.address, name: c.name, phone: c.phone, pkgs: c.pkgs, codes: c.codes, img: imgNo };
+        if (c.store) x.store = true;
         if (c.hub) x.hub = c.hub;
         if (c.pickup) x.pickup = c.pickup;
         out.push(x);
@@ -601,7 +602,7 @@
     const num = (a) => (String(a).split(',')[0].match(/\d+/) || [''])[0];
     items.forEach((it) => {
       const k = addrKey(it.address);
-      const person = { name: it.name || '', phone: it.phone || '', pkgs: it.pkgs || 1, codes: it.codes || [], img: it.img };
+      const person = { name: it.name || '', phone: it.phone || '', pkgs: it.pkgs || 1, codes: it.codes || [], img: it.img, store: !!it.store };
       let g = k.length >= 4 ? groups.find((x) => x.key === k) : null;
       // ίδιος πελάτης (όνομα + τηλέφωνο) και ίδιος αριθμός, γραμμένο αλλιώς («ανδρεου παπανδρεου 71» / «Λεωφόρος Ανδρέα Παπανδρέου 71»)
       if (!g && it.phone && num(it.address)) g = groups.find((x) => num(x.address) === num(it.address) &&
@@ -621,7 +622,8 @@
         if (person.address && person.address.length > g.address.length && addrKey(person.address) === k) g.address = it.address;
         return;
       }
-      g.people.push(person); g.cards++; // άλλη καρτέλα στην ίδια διεύθυνση
+      g.people.push(person); g.cards++;
+      if (it.store) g.store = true; // άλλη καρτέλα στην ίδια διεύθυνση
       if (it.ambig && !g.ambig) g.ambig = it.ambig;
     });
     groups.forEach((g) => {

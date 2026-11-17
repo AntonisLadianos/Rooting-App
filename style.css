@@ -724,3 +724,9 @@ body.navigating .modal { z-index: 1100; }
 .pin.pin-pickup { background: #15803d; }
 .stop .num.num-pickup { background: #15803d; border-radius: 9px; }
 .stop.current .num.num-pickup { background: var(--next); }
+
+/* ---- Παράδοση σε κατάστημα ---- */
+.hub-store { background: #0d9488; }
+.pin.pin-store { background: #0d9488; }
+.stop .num.num-store { background: #0d9488; border-radius: 9px; }
+.stop.current .num.num-store { background: var(--next); }
