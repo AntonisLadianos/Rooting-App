@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '70';
+  const APP_VERSION = '71';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -481,12 +481,76 @@
   searchEl.addEventListener('blur', () => setTimeout(() => sugEl.classList.add('hidden'), 200));
 
   // ---------- Στάσεις ----------
+  // Χειροκίνητη προσθήκη: πρώτα «τι είναι;» (πελάτης, κατάστημα, παραλαβή, Locker, Clever Point)
   function addStop(p) {
-    S.stops.push({ id: uid(), label: p.label, lat: p.lat, lng: p.lng, note: '', phone: '', orig: p.orig || '', exact: p.exact !== false, done: false });
-    invalidateRoute();
-    save(); render();
-    if (mv) mv.setView(p.lat, p.lng, Math.max(mv.getZoom(), 14));
-    toast('Προστέθηκε: ' + p.label.split(',')[0]);
+    stopTypeDialog({ title: 'Νέα στάση', label: p.label, type: 'customer', name: '', phone: '', pkgs: 1, window: '', okText: 'Προσθήκη' }, (v) => {
+      const s = { id: uid(), label: p.label, lat: p.lat, lng: p.lng, note: '', phone: '', orig: p.orig || '', exact: p.exact !== false, done: false };
+      applyStopType(s, v);
+      S.stops.push(s);
+      invalidateRoute();
+      save(); render();
+      if (mv) mv.setView(p.lat, p.lng, Math.max(mv.getZoom(), 14));
+      toast('Προστέθηκε: ' + p.label.split(',')[0]);
+    });
+  }
+  const STOP_TYPES = [
+    { k: 'customer', t: 'Πελάτης' }, { k: 'store', t: 'Παράδοση σε κατάστημα' }, { k: 'pickup', t: 'Παραλαβή από κατάστημα' },
+    { k: 'locker', t: 'Locker' }, { k: 'clever', t: 'Clever Point' }
+  ];
+  function stopTypeOf(s) { return s.hub ? s.hub.kind : (s.pickup ? 'pickup' : (s.store ? 'store' : 'customer')); }
+  function stopTypeValues(s) {
+    const type = stopTypeOf(s);
+    const p0 = (s.people || [])[0] || {};
+    return { type, name: s.hub ? s.hub.name : (s.pickup ? s.pickup.name : (p0.name || '')), phone: s.phone || p0.phone || '',
+      pkgs: s.hub ? (s.hub.deliver || s.pkgs || 1) : (s.pickup ? (s.pickup.pkgs || 1) : (s.pkgs || 1)), window: s.pickup ? (s.pickup.window || '') : '' };
+  }
+  // Εφαρμόζει το είδος/όνομα/δέματα σε μια στάση (νέα ή υπάρχουσα), κρατώντας ό,τι άλλο έχει
+  function applyStopType(s, v) {
+    const n = Math.max(1, parseInt(v.pkgs, 10) || 1);
+    const name = (v.name || '').trim();
+    delete s.hub; delete s.pickup; delete s.store;
+    if (v.phone !== undefined) s.phone = (v.phone || '').trim();
+    if (v.type === 'locker' || v.type === 'clever') {
+      s.hub = { kind: v.type, name };
+      s.pkgs = n; s.people = [{ name: name || hubKind(s.hub), phone: '', pkgs: n }];
+    } else if (v.type === 'pickup') {
+      s.pickup = { name, window: (v.window || '').trim(), pkgs: n };
+      s.pkgs = undefined; s.people = [{ name: name || 'Κατάστημα', phone: s.phone || '', pkgs: 1 }];
+    } else {
+      if (v.type === 'store') s.store = true;
+      const keep = (s.people || []).length > 1 ? s.people : null; // πολλοί πελάτες: δεν τους σβήνουμε
+      if (keep) { if (name) keep[0].name = name; s.pkgs = Math.max(n, keep.reduce((a, p) => a + (p.pkgs || 1), 0)); }
+      else { s.pkgs = n; s.people = name || s.phone ? [{ name, phone: s.phone || '', pkgs: n }] : undefined; }
+    }
+  }
+  function stopTypeDialog(v, onOk) {
+    openModal(v.title, `
+      ${v.label ? `<p class="stop-full">${esc(v.label)}</p>` : ''}
+      <div class="field"><span>Τι είναι;</span>
+        <div class="type-grid" id="stType">${STOP_TYPES.map((x) => `<button type="button" data-k="${x.k}" class="type-btn t-${x.k}${x.k === v.type ? ' on' : ''}">${esc(x.t)}</button>`).join('')}</div></div>
+      <label class="field"><span id="stNameL">Όνομα</span><input id="stName" type="text" value="${esc(v.name || '')}" autocomplete="off"></label>
+      <div class="grid2">
+        <label class="field"><span id="stPkgL">Δέματα</span><input id="stPkgs" type="number" inputmode="numeric" min="1" value="${esc(v.pkgs || 1)}"></label>
+        <label class="field" id="stPhoneF"><span>Τηλέφωνο</span><input id="stPhone" type="tel" value="${esc(v.phone || '')}" placeholder="προαιρετικό"></label>
+      </div>
+      <label class="field" id="stWinF"><span>Ωράριο παραλαβής</span><input id="stWin" type="text" value="${esc(v.window || '')}" placeholder="π.χ. 13:45–15:45"></label>
+      <button class="btn btn-primary btn-block" id="stOk">${esc(v.okText || 'Αποθήκευση')}</button>`, (b) => {
+      let type = v.type;
+      const upd = () => {
+        b.querySelectorAll('#stType .type-btn').forEach((x) => x.classList.toggle('on', x.dataset.k === type));
+        b.querySelector('#stNameL').textContent = type === 'customer' ? 'Όνομα πελάτη (προαιρετικό)' : (type === 'locker' || type === 'clever' ? 'Όνομα σημείου' : 'Όνομα καταστήματος');
+        b.querySelector('#stPkgL').textContent = type === 'pickup' ? 'Πακέτα για παραλαβή' : 'Δέματα';
+        b.querySelector('#stWinF').classList.toggle('hidden', type !== 'pickup');
+        b.querySelector('#stPhoneF').classList.toggle('hidden', type === 'locker' || type === 'clever');
+      };
+      b.querySelectorAll('#stType .type-btn').forEach((x) => { x.onclick = () => { type = x.dataset.k; upd(); }; });
+      upd();
+      b.querySelector('#stOk').onclick = () => {
+        const val = { type, name: b.querySelector('#stName').value, pkgs: b.querySelector('#stPkgs').value, phone: b.querySelector('#stPhone').value, window: b.querySelector('#stWin').value };
+        closeModal();
+        onOk(val);
+      };
+    });
   }
 
   function invalidateRoute() {
@@ -1112,6 +1176,7 @@
       ${(s.people || []).length ? `<ul class="people">${s.people.map((p) => `<li><span>${ic('user')} ${esc(p.name || '—')}${(p.pkgs || 1) > 1 || s.people.length > 1 ? ` <b>· ${pkgsText(p.pkgs || 1)}</b>` : ''}</span>${p.phone ? `<a class="btn btn-ghost" href="tel:${esc(p.phone.replace(/\s/g, ''))}">${ic('phone')} ${esc(p.phone)}</a>` : ''}</li>`).join('')}</ul>` : ''}
       ${s.orig ? `<p class="muted small">Στον χάρτη: ${esc(s.label)}${s.exact === false ? ' <b class="approx">(κατά προσέγγιση — δεν βρέθηκε ο ακριβής αριθμός)</b>' : ''}</p>` : ''}
       <button class="btn btn-ghost btn-block" id="mFix">${ic('locate')} Λάθος θέση; Διόρθωση</button>
+      <button class="btn btn-ghost btn-block" id="mType">${ic('note')} Είδος: <b>${esc((STOP_TYPES.find((x) => x.k === stopTypeOf(s)) || {}).t || '')}</b> — αλλαγή</button>
       <div class="grid2">
         <a class="btn btn-primary" id="mNav" href="${esc(navUrl(s))}"${navUrl(s).startsWith('http') ? ' target="_blank" rel="noopener"' : ''}>${ic('nav')} Πλοήγηση</a>
         <button class="btn ${s.done ? 'btn-ghost' : 'btn-success'}" id="mDone">${s.failed ? ic('restore') + ' Επαναφορά' : (s.done ? ic('restore') + ' Δεν παραδόθηκε' : ic('check') + ' Παραδόθηκε')}</button>
@@ -1143,6 +1208,12 @@
       b.querySelector('#mDown').onclick = () => { persist(); moveStop(s.id, 1); };
       b.querySelector('#mDel').onclick = () => { deleteStop(s.id, true); closeModal(); };
       b.querySelector('#mFix').onclick = () => { persist(); fixStopPlace(s.id); };
+      b.querySelector('#mType').onclick = () => {
+        persist();
+        stopTypeDialog(Object.assign({ title: 'Είδος στάσης', label: title(s), okText: 'Αποθήκευση' }, stopTypeValues(s)), (v) => {
+          applyStopType(s, v); save(); render(); toast('Αποθηκεύτηκε'); openStop(s.id);
+        });
+      };
       b.querySelectorAll('#mPrio button').forEach((bt) => { bt.onclick = () => {
         if (bt.dataset.p) s.prio = bt.dataset.p; else delete s.prio;
         save(); render();

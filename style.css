@@ -730,3 +730,14 @@ body.navigating .modal { z-index: 1100; }
 .pin.pin-store { background: #0d9488; }
 .stop .num.num-store { background: #0d9488; border-radius: 9px; }
 .stop.current .num.num-store { background: var(--next); }
+
+/* ---- Επιλογή είδους στάσης ---- */
+.type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 4px; }
+.type-btn { border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; font-size: 14.5px; padding: 10px 6px; border-radius: 10px; cursor: pointer; min-height: 44px; }
+.type-btn.on { color: #fff; border-color: transparent; font-weight: 600; }
+.type-btn.t-customer.on { background: var(--primary); }
+.type-btn.t-store.on { background: #0d9488; }
+.type-btn.t-pickup.on { background: #15803d; }
+.type-btn.t-locker.on { background: #7c3aed; }
+.type-btn.t-clever.on { background: #0891b2; }
+.field.hidden, #stWinF.hidden, #stPhoneF.hidden { display: none; }
