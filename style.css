@@ -741,3 +741,18 @@ body.navigating .modal { z-index: 1100; }
 .type-btn.t-locker.on { background: #7c3aed; }
 .type-btn.t-clever.on { background: #0891b2; }
 .field.hidden, #stWinF.hidden, #stPhoneF.hidden { display: none; }
+
+/* ---- Λόγος αποτυχίας ---- */
+.reason-bar { position: fixed; left: 10px; right: 10px; bottom: calc(14px + var(--safe-bottom)); z-index: 1150; background: var(--card); color: var(--text);
+  border-radius: 16px; padding: 10px 10px 12px; box-shadow: 0 10px 34px rgba(0,0,0,.4); border: 2px solid var(--danger); max-width: 520px; margin: 0 auto; }
+.reason-bar.hidden { display: none; }
+.rb-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 700; color: var(--danger); margin-bottom: 8px; }
+.rb-head .ic { width: 16px; height: 16px; vertical-align: -3px; }
+.rb-head small { color: var(--muted); font-weight: 500; margin-left: 4px; }
+.rb-close { border: 0; background: var(--bg); color: var(--muted); width: 32px; height: 32px; border-radius: 50%; font-size: 15px; flex: none; }
+.rb-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.rb-chips button { border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; font-size: 15px; padding: 10px 12px; border-radius: 10px; min-height: 44px; flex: 1 1 auto; }
+.rb-chips button.on { background: var(--danger); color: #fff; border-color: var(--danger); }
+.fail-reason { color: var(--danger); }
+.fail-reason .ic { width: 13px; height: 13px; vertical-align: -2px; }
+@media (orientation: landscape) and (max-height: 560px) { .reason-bar { left: auto; right: 10px; width: min(420px, 60vw); } }

@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '71';
+  const APP_VERSION = '72';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -696,6 +696,7 @@
       const eta = etas[s.id];
       const meta = [];
       if (eta && !s.done) meta.push(`${ic('clock')} ${fmtClock(eta.at)}`, `${fmtKm(eta.leg.distance)} · ${fmtDur(eta.leg.duration)}`);
+      if (s.failed) meta.push(`<b class="fail-reason">${ic('x')} ${esc(s.failReason || 'χωρίς λόγο')}</b>`);
       if (s.prio && !s.done) meta.push(`<b class="prio-badge">${s.prio === 'first' ? 'πρώτα' : 'τελευταία'}</b>`);
       if (s.exact === false && !s.done) meta.push(`<b class="approx">${ic('alert')} κατά προσέγγιση</b>`);
       if (s.pkgs > 1) meta.push(`<b class="pkg-inline">${ic('package')} ${pkgsText(s.pkgs)}</b>`);
@@ -713,7 +714,7 @@
           <span class="chev">›</span>
         </div>`;
       attachSwipe(li, s);
-      if (s.done) li.dataset.q = searchKey([title(s), s.label, whoText(s), s.note, (s.people || []).map((p) => p.name + ' ' + (p.phone || '')).join(' '), s.phone].join(' '));
+      if (s.done) li.dataset.q = searchKey([title(s), s.label, whoText(s), s.note, (s.people || []).map((p) => p.name + ' ' + (p.phone || '')).join(' '), s.phone, s.failReason].join(' '));
       (s.failed ? failEl : (s.done ? doneEl : stopsEl)).appendChild(li);
     });
     const doneN = list.filter((s) => s.done && !s.failed).length, failN = list.filter((s) => s.failed).length;
@@ -981,7 +982,8 @@
     if (!s) return;
     if (undoable) offerUndo(val ? `✓ Παραδόθηκε: ${title(s).split(',')[0]}` : 'Η στάση επανήλθε στο δρομολόγιο');
     const wasFailed = !!s.failed;
-    s.done = val; s.doneAt = val ? Date.now() : null; s.failed = false;
+    s.done = val; s.doneAt = val ? Date.now() : null; s.failed = false; delete s.failReason;
+    if (wasFailed) hideFailReason();
     S.lastDone = val ? { id: s.id, at: Date.now(), failed: false } : null;
     save(); render();
     if (wasFailed && !val) scheduleLegs();
@@ -995,6 +997,32 @@
 
   // Αποτυχία παράδοσης: βγαίνει από το δρομολόγιο (χωρίς να αλλάξει η σειρά των υπολοίπων),
   // κόκκινη πινέζα στον χάρτη, ενότητα «Αποτυχημένα»
+  // ---------- Λόγος αποτυχίας ----------
+  const FAIL_REASONS = ['Απών', 'Λάθος διεύθυνση', 'Άρνηση παραλαβής', 'Κλειστό', 'Άλλο'];
+  let reasonTimer = null;
+  function setFailReason(s, r) {
+    if (r === 'Άλλο') {
+      const t = prompt('Λόγος αποτυχίας:', s.failReason && !FAIL_REASONS.includes(s.failReason) ? s.failReason : '');
+      if (t == null) return false;
+      r = t.trim() || 'Άλλο';
+    }
+    s.failReason = r; save(); render();
+    return true;
+  }
+  // Μετά το ✗: μπάρα με τους λόγους (δεν σταματά τίποτα — αν δεν πατήσεις, κλείνει μόνη της)
+  function askFailReason(s) {
+    let bar = $('reasonBar');
+    if (!bar) { bar = document.createElement('div'); bar.id = 'reasonBar'; bar.className = 'reason-bar hidden'; document.body.appendChild(bar); }
+    bar.innerHTML = `<div class="rb-head"><span>${ic('x')} Λόγος αποτυχίας; <small>${esc(title(s).split(',')[0])}</small></span><button class="rb-close" aria-label="Κλείσιμο">✕</button></div>
+      <div class="rb-chips">${FAIL_REASONS.map((r) => `<button data-r="${esc(r)}">${esc(r)}</button>`).join('')}</div>`;
+    const hide = () => { bar.classList.add('hidden'); clearTimeout(reasonTimer); };
+    bar.querySelector('.rb-close').onclick = hide;
+    bar.querySelectorAll('[data-r]').forEach((b) => { b.onclick = () => { if (setFailReason(s, b.dataset.r)) { hide(); toast('Λόγος: ' + s.failReason); } }; });
+    bar.classList.remove('hidden');
+    clearTimeout(reasonTimer); reasonTimer = setTimeout(hide, 15000);
+  }
+  function hideFailReason() { const bar = $('reasonBar'); if (bar) bar.classList.add('hidden'); clearTimeout(reasonTimer); }
+
   function markFailed(id) {
     closeMapPopup();
     const s = S.stops.find((x) => x.id === id);
@@ -1007,6 +1035,7 @@
     const next = orderedStops().find((x) => !x.done);
     if (next && mv) mv.panTo(next.lat, next.lng);
     if (navigator.vibrate) navigator.vibrate([20, 60, 20]);
+    askFailReason(s);
   }
 
 
@@ -1182,7 +1211,8 @@
         <button class="btn ${s.done ? 'btn-ghost' : 'btn-success'}" id="mDone">${s.failed ? ic('restore') + ' Επαναφορά' : (s.done ? ic('restore') + ' Δεν παραδόθηκε' : ic('check') + ' Παραδόθηκε')}</button>
       </div>
       ${!s.done ? `<button class="btn btn-fail btn-block" id="mFail">${ic('x')} Αποτυχία παράδοσης</button>` : ''}
-      ${s.failed ? '<p class="fail-txt small">✗ Αποτυχημένη παράδοση — εκτός δρομολογίου. Πάτα «Επαναφορά» για να μπει ξανά.</p>' : ''}
+      ${s.failed ? `<p class="fail-txt small">✗ Αποτυχημένη παράδοση — εκτός δρομολογίου. Πάτα «Επαναφορά» για να μπει ξανά.</p>
+        <div class="field"><span>Λόγος αποτυχίας</span><div class="rb-chips in-modal" id="mReason">${FAIL_REASONS.map((r) => `<button data-r="${esc(r)}" class="${(s.failReason === r || (r === 'Άλλο' && s.failReason && !FAIL_REASONS.includes(s.failReason))) ? 'on' : ''}">${esc(r === 'Άλλο' && s.failReason && !FAIL_REASONS.includes(s.failReason) ? s.failReason : r)}</button>`).join('')}</div></div>` : ''}
       ${!s.done ? `<div class="field"><span>Θέση στη σειρά (ισχύει στην επόμενη βελτιστοποίηση)</span>
         <div class="mm-seg prio-seg" id="mPrio">
           <button data-p="first" class="${s.prio === 'first' ? 'on' : ''}">Πρώτα</button>
@@ -1208,6 +1238,7 @@
       b.querySelector('#mDown').onclick = () => { persist(); moveStop(s.id, 1); };
       b.querySelector('#mDel').onclick = () => { deleteStop(s.id, true); closeModal(); };
       b.querySelector('#mFix').onclick = () => { persist(); fixStopPlace(s.id); };
+      b.querySelectorAll('#mReason [data-r]').forEach((bt) => { bt.onclick = () => { if (setFailReason(s, bt.dataset.r)) openStop(s.id); }; });
       b.querySelector('#mType').onclick = () => {
         persist();
         stopTypeDialog(Object.assign({ title: 'Είδος στάσης', label: title(s), okText: 'Αποθήκευση' }, stopTypeValues(s)), (v) => {
@@ -1907,7 +1938,7 @@
         };
       }
       b.querySelector('#sExport').onclick = async () => {
-        const txt = orderedStops().map((s, i) => `${i + 1}. ${s.failed ? '✗ ' : (s.done ? '✓ ' : '')}${s.label}${s.note ? ' — ' + s.note : ''}${s.phone ? ' — ' + s.phone : ''}`).join('\n');
+        const txt = orderedStops().map((s, i) => `${i + 1}. ${s.failed ? '✗ ' : (s.done ? '✓ ' : '')}${s.label}${s.failReason ? ' [' + s.failReason + ']' : ''}${s.note ? ' — ' + s.note : ''}${s.phone ? ' — ' + s.phone : ''}`).join('\n');
         try {
           if (navigator.share) await navigator.share({ title: 'Στάσεις', text: txt });
           else { await navigator.clipboard.writeText(txt); toast('Αντιγράφηκε'); }

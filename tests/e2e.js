@@ -1,0 +1,194 @@
+#!/usr/bin/env node
+/*
+ * Δοκιμές της εφαρμογής μέσα σε browser (Playwright):  node tests/e2e.js
+ * Χωρίς internet: χάρτης, αναζήτηση και διαδρομές απαντιούνται από ψεύτικες υπηρεσίες εδώ.
+ * Όλα τα στοιχεία είναι ΦΑΝΤΑΣΤΙΚΑ.
+ */
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const { chromium, devices } = require('playwright');
+
+const ROOT = path.join(__dirname, '..');
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.webmanifest': 'application/manifest+json', '.wasm': 'application/wasm' };
+
+// ---------- ψεύτικες υπηρεσίες ----------
+function hav(a, b) {
+  const R = 6371000, r = Math.PI / 180, dLat = (b[1] - a[1]) * r, dLng = (b[0] - a[0]) * r;
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * r) * Math.cos(b[1] * r) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+function osrm(url) {
+  const m = url.match(/\/(table|route)\/v1\/driving\/([^?]+)/);
+  const pts = m[2].split(';').map((s) => s.split(',').map(Number));
+  if (m[1] === 'table') return { code: 'Ok', durations: pts.map((a) => pts.map((b) => hav(a, b) * 1.3 / 8)) };
+  const coords = [], legs = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1], d = hav(a, b) * 1.3;
+    for (let k = 0; k < 10; k++) coords.push([a[0] + (b[0] - a[0]) * k / 10, a[1] + (b[1] - a[1]) * k / 10]);
+    legs.push({ distance: d, duration: d / 8, steps: [
+      { maneuver: { type: 'depart', location: a }, name: 'Δοκιμαστική' },
+      { maneuver: { type: 'turn', modifier: 'left', location: [a[0] + (b[0] - a[0]) / 2, a[1] + (b[1] - a[1]) / 2] }, name: 'Φανταστική' },
+      { maneuver: { type: 'arrive', location: b }, name: '' }] });
+  }
+  coords.push(pts[pts.length - 1]);
+  const total = legs.reduce((s, l) => s + l.distance, 0);
+  return { code: 'Ok', routes: [{ geometry: { type: 'LineString', coordinates: coords }, legs, distance: total, duration: total / 8 }] };
+}
+const photon = () => ({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [25.14, 35.33] },
+  properties: { street: 'Δοκιμαστική', housenumber: '10', city: 'Ηράκλειο', postcode: '71409', countrycode: 'GR', osm_key: 'place', type: 'house' } }] });
+
+// ---------- βοηθητικά ----------
+const mk = (id, lat, lng, extra) => Object.assign({ id, label: 'Στάση ' + id + ', Ηράκλειο', orig: 'Στάση ' + id + ', Ηράκλειο', lat, lng, note: '', phone: '690000000' + id.length, exact: true, done: false, pkgs: 1, people: [{ name: 'Πελάτης ' + id, phone: '6900000001', pkgs: 1 }] }, extra || {});
+const ROUTE = (ids, legs) => ({ order: ids, legs: legs || ids.map(() => ({ duration: 200, distance: 1500 })), geometry: null, startedAt: Date.now(), origin: { lat: 35.3387, lng: 25.1442 } });
+const STOPS = () => [mk('a', 35.3315, 25.1338), mk('b', 35.3246, 25.1227), mk('c', 35.3350, 25.1150)];
+
+let base = '', browser = null, passed = 0, failed = 0;
+async function page(state, dev) {
+  const ctx = await browser.newContext({ ...devices[dev || 'iPhone 13'], geolocation: { latitude: 35.3387, longitude: 25.1442 }, permissions: ['geolocation'], serviceWorkers: 'block' });
+  await ctx.route(/tile\.openstreetmap|nominatim|googleapis|gstatic/, (r) => r.abort());
+  await ctx.route(/project-osrm/, (r) => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(osrm(r.request().url())) }));
+  await ctx.route(/photon/, (r) => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(photon()) }));
+  const p = await ctx.newPage();
+  p.errs = [];
+  p.on('pageerror', (e) => p.errs.push(e.message));
+  p.on('dialog', (d) => d.accept(d.type() === 'prompt' ? 'Δοκιμή' : undefined));
+  if (state) await p.addInitScript((s) => { if (!localStorage.getItem('rooting.v1')) localStorage.setItem('rooting.v1', JSON.stringify(s)); }, state);
+  await p.goto(base + '/index.html');
+  await p.waitForTimeout(900);
+  p.ctx = ctx;
+  return p;
+}
+const settings = (x) => Object.assign({ navApp: 'inapp', serviceMin: 3 }, x || {});
+const idle = (p) => p.waitForFunction(() => document.getElementById('busy').classList.contains('hidden'), null, { timeout: 20000 });
+const stored = (p) => p.evaluate(() => JSON.parse(localStorage.getItem('rooting.v1')));
+
+async function test(name, fn) {
+  let p = null;
+  try {
+    p = await fn();
+    if (p && p.errs && p.errs.length) throw new Error('σφάλμα στη σελίδα: ' + p.errs[0]);
+    passed++; console.log('✓ ' + name);
+  } catch (e) {
+    failed++; console.log('✗ ' + name + '\n   ' + String(e.message || e).split('\n')[0]);
+  } finally { if (p && p.ctx) await p.ctx.close(); }
+}
+function expect(cond, msg) { if (!cond) throw new Error(msg); }
+
+// ---------- δοκιμές ----------
+(async () => {
+  const server = http.createServer((req, res) => {
+    const f = path.join(ROOT, decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'index.html');
+    if (!f.startsWith(ROOT) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404); res.end(); return; }
+    res.writeHead(200, { 'Content-Type': TYPES[path.extname(f)] || 'application/octet-stream' });
+    fs.createReadStream(f).pipe(res);
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  base = 'http://127.0.0.1:' + server.address().port;
+  browser = await chromium.launch();
+
+  await test('Αποτυχία: βγαίνει η μπάρα λόγων, ο λόγος αποθηκεύεται και φαίνεται στη λίστα', async () => {
+    const p = await page({ stops: STOPS(), route: ROUTE(['a', 'b', 'c']), settings: settings() });
+    await p.click('#btnFailNext');
+    await p.waitForSelector('#reasonBar:not(.hidden)', { timeout: 3000 });
+    await p.click('#reasonBar [data-r="Απών"]');
+    const s = await stored(p);
+    expect(s.stops.find((x) => x.id === 'a').failReason === 'Απών', 'ο λόγος δεν αποθηκεύτηκε');
+    expect(/Απών/.test(await p.textContent('#failStops')), 'ο λόγος δεν φαίνεται στα Αποτυχημένα');
+    expect(await p.$eval('#reasonBar', (e) => e.classList.contains('hidden')), 'η μπάρα δεν έκλεισε');
+    return p;
+  });
+
+  await test('Αποτυχία: αλλαγή λόγου από το παράθυρο της στάσης, «Άλλο» με δικό σου κείμενο', async () => {
+    const p = await page({ stops: [mk('a', 35.33, 25.13, { done: true, failed: true, failReason: 'Απών' })], route: null, settings: settings() });
+    await p.click('#failStops li');
+    await p.waitForSelector('#mReason');
+    await p.click('#mReason [data-r="Άλλο"]');
+    await p.waitForTimeout(300);
+    expect((await stored(p)).stops[0].failReason === 'Δοκιμή', 'το «Άλλο» δεν κράτησε το κείμενο');
+    return p;
+  });
+
+  await test('Επαναφορά αποτυχημένης στάσης σβήνει τον λόγο', async () => {
+    const p = await page({ stops: [mk('a', 35.33, 25.13, { done: true, failed: true, failReason: 'Κλειστό' })], route: null, settings: settings() });
+    await p.click('#failStops li'); await p.waitForSelector('#mDone'); await p.click('#mDone'); await p.waitForTimeout(300);
+    const st = (await stored(p)).stops[0];
+    expect(!st.failed && !st.failReason, 'ο λόγος έμεινε μετά την επαναφορά');
+    return p;
+  });
+
+  await test('Πλοήγηση: ξεκινά, «Επαναφορά» μετά από σύρσιμο, άφιξη, ✓ πηγαίνει στην επόμενη', async () => {
+    const p = await page({ stops: STOPS(), route: ROUTE(['a', 'b', 'c']), settings: settings() });
+    await p.click('#btnNavNext'); await p.waitForTimeout(2000);
+    expect(await p.evaluate(() => RootingNav.active()), 'η πλοήγηση δεν ξεκίνησε');
+    const box = await p.$eval('#map', (e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 3 }; });
+    await p.mouse.move(box.x, box.y); await p.mouse.down(); await p.mouse.move(box.x + 60, box.y + 40, { steps: 5 }); await p.mouse.up();
+    await p.waitForTimeout(200);
+    expect(!(await p.$eval('#navRecenter', (e) => e.classList.contains('hidden'))), 'δεν εμφανίστηκε η «Επαναφορά»');
+    await p.click('#navRecenter');
+    await p.ctx.setGeolocation({ latitude: 35.33152, longitude: 25.13382 }); await p.waitForTimeout(2200);
+    expect(/Έφτασες/.test(await p.textContent('#navText')), 'δεν αναγνώρισε την άφιξη');
+    await p.click('#navDoneMan'); await p.waitForTimeout(1500);
+    expect(/Στάση b/.test(await p.textContent('#navDest')), 'δεν πήγε στην επόμενη στάση');
+    return p;
+  });
+
+  await test('Πλοήγηση στο πλάι: ο χάρτης δεν κρύβεται από τη στήλη και τα κουμπιά χωράνε', async () => {
+    const p = await page({ stops: STOPS(), route: ROUTE(['a', 'b', 'c']), settings: settings() }, 'iPhone SE landscape');
+    await p.click('#btnNavNext'); await p.waitForTimeout(2000);
+    const r = await p.evaluate(() => { const q = (s) => document.querySelector(s).getBoundingClientRect(); const m = q('#map'), nb = q('.nav-bottom'), bt = q('.nav-btns'); return { overlap: m.right > nb.left + 1, btns: bt.bottom <= innerHeight + 0.5 }; });
+    expect(!r.overlap, 'ο χάρτης είναι κάτω από τη στήλη');
+    expect(r.btns, 'τα κουμπιά βγαίνουν εκτός οθόνης');
+    return p;
+  });
+
+  await test('Παρατεταμένο πάτημα: η καρτέλα μένει ανοιχτή όταν αφήνεις το δάχτυλο', async () => {
+    const p = await page({ stops: [], route: null, settings: settings() });
+    const box = await p.$eval('#map', (e) => { const r = e.getBoundingClientRect(); return { x: r.x + 80, y: r.y + 150 }; });
+    await p.mouse.click(box.x, box.y, { button: 'right' }); await p.waitForTimeout(100);
+    await p.mouse.click(box.x, box.y); await p.waitForTimeout(300);
+    expect(!!(await p.$('.map-popup')), 'η καρτέλα έκλεισε μόλις άφησες το δάχτυλο');
+    return p;
+  });
+
+  await test('Καρτέλα στάσης στον χάρτη κλείνει όταν ξεκινάς πλοήγηση', async () => {
+    const p = await page({ stops: STOPS(), route: ROUTE(['a', 'b', 'c']), settings: settings() });
+    await p.evaluate(() => document.querySelector('.pin-next').click()); await p.waitForTimeout(300);
+    expect(!!(await p.$('.map-popup')), 'η καρτέλα δεν άνοιξε');
+    await p.click('#btnNavNext'); await p.waitForTimeout(1500);
+    expect(!(await p.$('.map-popup')), 'η καρτέλα έμεινε ανοιχτή');
+    return p;
+  });
+
+  await test('Βελτιστοποίηση: «Πρώτα» και «Τελευταία» τηρούνται', async () => {
+    const st = STOPS(); st[2].prio = 'first'; st[0].prio = 'last';
+    const p = await page({ stops: st, route: null, settings: settings() });
+    await p.click('#btnOptimize'); await p.waitForTimeout(300); await idle(p); await p.waitForTimeout(300);
+    const o = (await stored(p)).route.order;
+    expect(o[0] === 'c' && o[o.length - 1] === 'a', 'λάθος σειρά: ' + o.join(','));
+    return p;
+  });
+
+  await test('Αναζήτηση στα ολοκληρωμένα: τα πρώτα γράμματα φιλτράρουν παραδομένα και αποτυχημένα', async () => {
+    const st = [mk('a', 35.33, 25.13, { done: true, label: 'Κνωσού 45', orig: 'Κνωσού 45' }), mk('b', 35.33, 25.13, { done: true, failed: true, label: 'Ικάρου 50', orig: 'Ικάρου 50' }), mk('c', 35.33, 25.13, { done: true, label: 'Λεωφόρος Κνωσού 172', orig: 'Λεωφόρος Κνωσού 172' })];
+    const p = await page({ stops: st, route: null, settings: settings() });
+    await p.fill('#doneSearch', 'κνω'); await p.waitForTimeout(150);
+    const vis = await p.$$eval('#doneStops > li:not(.hidden), #failStops > li:not(.hidden)', (a) => a.length);
+    expect(vis === 2, 'βρέθηκαν ' + vis + ' αντί για 2');
+    return p;
+  });
+
+  await test('Χειροκίνητη στάση: επιλογή είδους (παραλαβή με ωράριο)', async () => {
+    const p = await page({ stops: [], route: null, settings: settings() });
+    await p.fill('#search', 'Δοκιμαστική 10'); await p.waitForSelector('#suggestions li', { timeout: 8000 }); await p.click('#suggestions li');
+    await p.waitForSelector('#stType'); await p.click('#stType [data-k="pickup"]');
+    await p.fill('#stName', 'Demo Store'); await p.fill('#stPkgs', '5'); await p.fill('#stWin', '13:45–15:45'); await p.click('#stOk'); await p.waitForTimeout(300);
+    const s = (await stored(p)).stops[0];
+    expect(s && s.pickup && s.pickup.pkgs === 5 && s.pickup.window === '13:45–15:45', 'η παραλαβή δεν αποθηκεύτηκε σωστά');
+    return p;
+  });
+
+  await browser.close(); server.close();
+  console.log(`\n${passed} πέτυχαν, ${failed} απέτυχαν`);
+  process.exit(failed ? 1 : 0);
+})();
