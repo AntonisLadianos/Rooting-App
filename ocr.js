@@ -350,6 +350,39 @@
   }
   const RE_CUSTOMER = /παρ[αά]δοση\s*σε\s*πελ[αά]τη|παραλαβ[ήη]\s*(απ[οό]|σε)\s*πελ[αά]τη/i;
   const RE_STORE = /παρ[αά]δοση\s*σε\s*κατ[αά]στημα/i;
+  // «Παραλαβή από κατάστημα»: όνομα (1-2 γραμμές), διεύθυνση ή plus code («849W+73, Ηράκλειο»), προαιρετική οδηγία,
+  // τηλέφωνο, ωράριο («15:00 - 19:00») και «N πακέτα». Δεν έχει κωδικό αποστολής.
+  const RE_PICKUP = /παραλαβ[ήη]\s*απ[οό]\s*(?!πελ)/i; // «…από κατάστημα» (και όταν η λέξη διαβαστεί λάθος), όχι «από πελάτη"
+  const RE_PLUS = /^[2-9CFGHJMPQRVWX]{4,8}\+[2-9CFGHJMPQRVWX]{2,3}\b/i;
+  const RE_WINDOW = /(\d{1,2})[:.](\d{2})\s*[-–]\s*(\d{1,2})[:.](\d{2})/;
+  function parsePickup(lines) {
+    const win = lines.map((l) => l.match(RE_WINDOW)).find(Boolean);
+    const pkLine = lines.find((l) => /πακ[εέ]τ/i.test(l));
+    const pk = pkLine ? parseInt(((pkLine.match(/(\d{1,3})\s*πακ[εέ]τ/i) || [])[1]) || '0', 10) : 0;
+    const body = [];
+    let phone = '';
+    for (const l of lines) {
+      if (RE_WINDOW.test(l) || /πακ[εέ]τ/i.test(l)) break;
+      if (isPhoneLine(l)) { phone = normPhone(l); break; }
+      body.push(l);
+    }
+    if (!phone) { const ph = lines.find(isPhoneLine); if (ph) phone = normPhone(ph); }
+    const isAddrStart = (l) => RE_PLUS.test(l) || hasPostal(l) || (/\d/.test(l) && /,/.test(l) && /\p{L}{3,}/u.test(l));
+    const a0 = body.findIndex(isAddrStart);
+    if (a0 < 0) return null;
+    let a1 = a0;
+    while (a1 + 1 < body.length && (/,\s*$/.test(body[a1]) || /^\d{3}\s?\d{2}\b/.test(body[a1 + 1]) || isCountryOnly(body[a1 + 1]))) a1++;
+    const plus = RE_PLUS.test(body[a0]);
+    const rawAddr = body.slice(a0, a1 + 1).join(' ').replace(/\s+/g, ' ');
+    const address = plus ? rawAddr.replace(RE_COUNTRY, '').replace(/[,\s]+$/, '').trim() : tidyAddress(rawAddr);
+    return {
+      address, phone, plus,
+      name: body.slice(0, a0).join(' ').replace(/\s+/g, ' ').trim(),
+      info: body.slice(a1 + 1).join(' ').replace(/\s+/g, ' ').trim(),
+      window: win ? `${win[1].padStart(2, '0')}:${win[2]}–${win[3].padStart(2, '0')}:${win[4]}` : '',
+      pkgs: pk > 0 ? pk : 0
+    };
+  }
   // «1 πακέτο παράδοση» / «2 πακέτα …» (το 1 συχνά διαβάζεται Ί/I/l)
   function pkgCount(lines) {
     const l = lines.find((x) => /πακ[εέ]τ/i.test(x));
@@ -411,6 +444,12 @@
         const cnt = hubCounts(hl);
         cards.push({ hub: Object.assign({ kind, name }, cnt), address: '', name: (kind === 'locker' ? 'Locker' : 'Clever Point') + (name ? ' · ' + name : ''),
           phone: '', pkgs: cnt.deliver || 0, codes: [], closed: true });
+        return;
+      }
+      if (RE_PICKUP.test(clean(seg[0]))) {
+        const pu = parsePickup(seg.slice(1).map(clean).filter((l) => l.length > 1));
+        if (pu && pu.address) cards.push({ pickup: { name: pu.name, window: pu.window, pkgs: pu.pkgs, info: pu.info, plus: pu.plus }, address: pu.address,
+          name: pu.name, phone: pu.phone, pkgs: 0, codes: [], closed: true });
         return;
       }
       const store = RE_STORE.test(clean(seg[0]));
@@ -505,6 +544,7 @@
       img.cards.forEach((c, i) => {
         const x = { address: c.address, name: c.name, phone: c.phone, pkgs: c.pkgs, codes: c.codes, img: imgNo };
         if (c.hub) x.hub = c.hub;
+        if (c.pickup) x.pickup = c.pickup;
         out.push(x);
         if (i === img.cards.length - 1 && !c.closed) lastOpen = x;
       });
@@ -549,7 +589,14 @@
       ['deliver', 'pickup', 'ret'].forEach((k) => { if (it.hub[k] != null) h.hub[k] = Math.max(h.hub[k] || 0, it.hub[k]); });
       h.pkgs = h.hub.deliver || 0;
     });
-    items = uniq.filter((it) => !it.hub && (hasStreet(it.address) || it.name || it.phone));
+    // παραλαβές από κατάστημα: ξεχωριστή στάση η καθεμία (έχουν δικό τους ωράριο), όχι ένωση με παραδόσεις στην ίδια διεύθυνση
+    const pickups = [];
+    uniq.filter((it) => it.pickup).forEach((it) => {
+      const h = pickups.find((x) => nameKey(x.pickup.name) === nameKey(it.pickup.name) && key(x.address) === key(it.address));
+      if (!h) pickups.push(Object.assign({}, it, { cards: 1, people: [] }));
+      else { h.pickup.pkgs = Math.max(h.pickup.pkgs || 0, it.pickup.pkgs || 0); h.pickup.window = h.pickup.window || it.pickup.window; h.phone = h.phone || it.phone; }
+    });
+    items = uniq.filter((it) => !it.hub && !it.pickup && (hasStreet(it.address) || it.name || it.phone));
     const groups = [];
     const num = (a) => (String(a).split(',')[0].match(/\d+/) || [''])[0];
     items.forEach((it) => {
@@ -600,7 +647,7 @@
       g.codes = byName.flatMap((p) => p.codes);
       delete g.key;
     });
-    return groups.concat(hubs);
+    return groups.concat(pickups, hubs);
   }
 
   const api = { visionRecognize, _visionLines: visionLines, recognize, extract, extractImage, key, tidyAddress, mergeAcross, applyAmbig, fixAreas, groupCards, addrKey, codesOverlap, normCode };

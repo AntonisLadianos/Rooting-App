@@ -718,3 +718,9 @@ body.navigating .modal { z-index: 1100; }
   filter: drop-shadow(0 1px 3px rgba(0,0,0,.55)); }
 .me-cone::before { background: conic-gradient(from -32deg, rgba(255,255,255,.55) 0deg 64deg, transparent 64deg); }
 .me-wrap.has-head .me-dot { display: none; }
+
+/* ---- Παραλαβή από κατάστημα ---- */
+.hub-pickup { background: #15803d; }
+.pin.pin-pickup { background: #15803d; }
+.stop .num.num-pickup { background: #15803d; border-radius: 9px; }
+.stop.current .num.num-pickup { background: var(--next); }
