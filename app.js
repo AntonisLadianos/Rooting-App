@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '73';
+  const APP_VERSION = '74';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -690,6 +690,7 @@
     stopsEl.innerHTML = ''; doneEl.innerHTML = ''; failEl.innerHTML = '';
     const nextStop = S.route ? list.find((s) => !s.done) : null;
 
+    const pendingN = list.filter((x) => !x.done).length;
     list.forEach((s, i) => {
       const li = document.createElement('li');
       li.className = 'stop-row';
@@ -711,9 +712,11 @@
             <span class="stop-title">${esc(title(s))}</span>
             ${meta.length ? `<span class="stop-meta">${meta.join('<span class="sep">·</span>')}</span>` : ''}
           </span>
-          <span class="chev">›</span>
+          ${!s.done && pendingN > 1 ? `<span class="drag-h" aria-label="Σύρε για αλλαγή σειράς" title="Σύρε για αλλαγή σειράς"><i></i><i></i><i></i></span>` : '<span class="chev">›</span>'}
         </div>`;
+      li.dataset.id = s.id;
       attachSwipe(li, s);
+      if (!s.done && pendingN > 1) attachDrag(li);
       if (s.done) li.dataset.q = searchKey([title(s), s.label, whoText(s), s.note, (s.people || []).map((p) => p.name + ' ' + (p.phone || '')).join(' '), s.phone, s.failReason].join(' '));
       (s.failed ? failEl : (s.done ? doneEl : stopsEl)).appendChild(li);
     });
@@ -1096,10 +1099,84 @@
   }
 
   // ---------- Σύρσιμο στη λίστα: δεξιά = Παραδόθηκε, αριστερά = Διαγραφή ----------
+  // ---------- Αλλαγή σειράς με σύρσιμο (από τη λαβή ⋮⋮ δεξιά) ----------
+  function setPendingOrder(ids) {
+    if (S.route) {
+      const done = S.route.order.filter((id) => !ids.includes(id));
+      S.route.order = done.concat(ids);
+      S.route.legs = null; S.route.geometry = null; scheduleLegs();
+    } else {
+      const byId = new Map(S.stops.map((x) => [x.id, x]));
+      const rest = S.stops.filter((x) => !ids.includes(x.id));
+      S.stops = ids.map((id) => byId.get(id)).filter(Boolean).concat(rest);
+    }
+    save(); render();
+  }
+  function attachDrag(li) {
+    const h = li.querySelector('.drag-h');
+    if (!h) return;
+    h.addEventListener('click', (e) => { e.stopPropagation(); });
+    h.addEventListener('pointerdown', (e) => {
+      if (e.button !== undefined && e.button !== 0) return;
+      e.preventDefault(); e.stopPropagation();
+      const list = $('stops'), body = $('sheetBody');
+      const rows = [...list.children];
+      const from = rows.indexOf(li);
+      const rects = rows.map((r) => r.getBoundingClientRect());
+      const step = rows.length > 1 ? rects[1].top - rects[0].top : rects[0].height;
+      const y0 = e.clientY, sc0 = body.scrollTop;
+      let to = from, lastY = e.clientY, raf = null;
+      li.classList.add('dragging');
+      document.body.classList.add('reordering');
+      try { h.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      if (navigator.vibrate) navigator.vibrate(10);
+      const paint = () => {
+        const dy = lastY - y0 + (body.scrollTop - sc0);
+        li.style.transform = `translateY(${dy}px)`;
+        const center = rects[from].top + rects[from].height / 2 + dy - (body.scrollTop - sc0);
+        to = from;
+        rects.forEach((r, j) => {
+          if (j === from) return;
+          const mid = r.top - (body.scrollTop - sc0) + r.height / 2;
+          if (j > from && center > mid) to = Math.max(to, j);
+          if (j < from && center < mid) to = Math.min(to, j);
+        });
+        rows.forEach((r, j) => {
+          if (j === from) return;
+          r.style.transform = (j > from && j <= to) ? `translateY(${-step}px)` : (j < from && j >= to) ? `translateY(${step}px)` : '';
+        });
+      };
+      // κοντά στις άκρες της κάρτας: κύλιση μόνη της
+      const tick = () => {
+        const br = body.getBoundingClientRect();
+        if (lastY < br.top + 70) body.scrollTop -= 10; else if (lastY > br.bottom - 90) body.scrollTop += 10;
+        paint();
+        raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+      const move = (ev) => { lastY = ev.clientY; };
+      const up = () => {
+        cancelAnimationFrame(raf);
+        h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up);
+        document.body.classList.remove('reordering');
+        rows.forEach((r) => { r.style.transform = ''; });
+        li.classList.remove('dragging');
+        const card = li.querySelector('.stop'); if (card) card.dataset.swiped = '1'; // να μην ανοίξει η στάση
+        if (to !== from) {
+          const ids = rows.map((r) => r.dataset.id);
+          const [m] = ids.splice(from, 1); ids.splice(to, 0, m);
+          setPendingOrder(ids);
+          if (navigator.vibrate) navigator.vibrate(15);
+        }
+      };
+      h.addEventListener('pointermove', move); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
+    });
+  }
+
   function attachSwipe(li, s) {
     const card = li.querySelector('.stop');
     let x0 = 0, y0 = 0, dx = 0, mode = null;
-    card.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; mode = null; card.style.transition = 'none'; }, { passive: true });
+    card.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; mode = e.target.closest('.drag-h') ? 'no' : null; card.style.transition = 'none'; }, { passive: true });
     card.addEventListener('touchmove', (e) => {
       const ddx = e.touches[0].clientX - x0, ddy = e.touches[0].clientY - y0;
       if (!mode) {
@@ -1230,11 +1307,7 @@
       <label class="field"><span>Σημείωση</span><input id="mNote" type="text" value="${esc(s.note)}" placeholder="π.χ. 3ος όροφος, κουδούνι Παπαδόπουλος"></label>
       <label class="field"><span>Τηλέφωνο</span><input id="mPhone" type="tel" value="${esc(s.phone)}" placeholder="69…"></label>
       ${s.phone ? `<a class="btn btn-ghost btn-block" href="tel:${esc(s.phone.replace(/\s/g, ''))}">${ic('phone')} Κλήση ${esc(s.phone)}</a>` : ''}
-      <div class="grid3">
-        <button class="btn btn-ghost" id="mUp">${ic('up')} Πάνω</button>
-        <button class="btn btn-ghost" id="mDown">${ic('down')} Κάτω</button>
-        <button class="btn btn-danger" id="mDel">${ic('trash')} Διαγραφή</button>
-      </div>`, (b) => {
+      <button class="btn btn-danger btn-block" id="mDel">${ic('trash')} Διαγραφή στάσης</button>`, (b) => {
       const persist = () => { s.note = b.querySelector('#mNote').value.trim(); s.phone = b.querySelector('#mPhone').value.trim(); save(); render(); };
       b.querySelector('#mNote').addEventListener('change', persist);
       b.querySelector('#mPhone').addEventListener('change', persist);
@@ -1242,8 +1315,6 @@
       bindNavLink(b.querySelector('#mNav'), s);
       const mf = b.querySelector('#mFail');
       if (mf) mf.onclick = () => { persist(); markFailed(s.id); closeModal(); };
-      b.querySelector('#mUp').onclick = () => { persist(); moveStop(s.id, -1); };
-      b.querySelector('#mDown').onclick = () => { persist(); moveStop(s.id, 1); };
       b.querySelector('#mDel').onclick = () => { deleteStop(s.id, true); closeModal(); };
       b.querySelector('#mFix').onclick = () => { persist(); fixStopPlace(s.id); };
       b.querySelectorAll('#mReason [data-r]').forEach((bt) => { bt.onclick = () => { if (setFailReason(s, bt.dataset.r)) openStop(s.id); }; });
@@ -2274,6 +2345,7 @@
       if (e.touches.length !== 1 || isLand()) { mode = 'scroll'; return; }
       y0 = lastY = e.touches[0].clientY; x0s = e.touches[0].clientX; t0 = lastT = Date.now(); startY = sheetY; mode = null; vel = 0;
       fromHandle = !!e.target.closest('.sheet-handle');
+      if (e.target.closest('.drag-h')) mode = 'scroll'; // αλλαγή σειράς, όχι μετακίνηση κάρτας
     }, { passive: true });
     sheet.addEventListener('touchmove', (e) => {
       if (e.touches.length !== 1 || isLand()) return;

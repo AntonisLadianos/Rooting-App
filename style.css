@@ -759,3 +759,13 @@ body.navigating .modal { z-index: 1100; }
 .rb-head > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rb-undo { border: 0; background: none; color: var(--primary); font: inherit; font-weight: 700; font-size: 15px; padding: 6px 4px; flex: none; display: inline-flex; align-items: center; gap: 4px; }
 .rb-undo .ic { width: 16px; height: 16px; }
+
+/* ---- Αλλαγή σειράς με σύρσιμο ---- */
+.drag-h { flex: none; width: 40px; align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  margin: -12px -8px -12px 0; touch-action: none; cursor: grab; color: var(--muted); }
+.drag-h i { display: block; width: 18px; height: 2.5px; border-radius: 2px; background: currentColor; opacity: .7; }
+.stops > li.stop-row { transition: transform .15s ease; }
+.stops > li.stop-row.dragging { transition: none; z-index: 20; position: relative; }
+.stops > li.stop-row.dragging .stop { box-shadow: 0 10px 28px rgba(0,0,0,.3); transform: scale(1.02); }
+body.reordering, body.reordering * { user-select: none; -webkit-user-select: none; }
+body.reordering .drag-h { cursor: grabbing; }

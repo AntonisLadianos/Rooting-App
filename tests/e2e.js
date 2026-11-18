@@ -193,6 +193,25 @@ function expect(cond, msg) { if (!cond) throw new Error(msg); }
     return p;
   });
 
+  await test('Αλλαγή σειράς με σύρσιμο από τη λαβή (με και χωρίς δρομολόγιο), η στάση δεν ανοίγει', async () => {
+    const st = [mk('a', 35.33, 25.13), mk('b', 35.331, 25.131), mk('c', 35.332, 25.132), mk('d', 35.333, 25.133)];
+    st[0].done = true;
+    const p = await page({ stops: st, route: ROUTE(['a', 'b', 'c', 'd']), settings: settings() });
+    await p.evaluate(() => { document.getElementById('sheet') && document.getElementById('stops').scrollIntoView(); });
+    await p.waitForTimeout(400);
+    expect(!(await p.$('#mUp')), 'έμειναν τα κουμπιά Πάνω/Κάτω');
+    const h = await p.$$eval('#stops .drag-h', (a) => a.map((x) => { const r = x.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }));
+    expect(h.length === 3, 'βρέθηκαν ' + h.length + ' λαβές αντί για 3');
+    // σύρε την τελευταία (d) στην κορυφή
+    await p.mouse.move(h[2].x, h[2].y); await p.mouse.down();
+    for (let k = 1; k <= 12; k++) { await p.mouse.move(h[2].x, h[2].y + (h[0].y - h[2].y - 10) * k / 12); await p.waitForTimeout(30); }
+    await p.mouse.up(); await p.waitForTimeout(400);
+    const o = (await stored(p)).route.order;
+    expect(o.join('') === 'adbc', 'λάθος σειρά: ' + o.join(''));
+    expect((await p.$eval('#modal', (e) => e.classList.contains('hidden'))), 'άνοιξε η στάση μετά το σύρσιμο');
+    return p;
+  });
+
   await test('Χειροκίνητη στάση: επιλογή είδους (παραλαβή με ωράριο)', async () => {
     const p = await page({ stops: [], route: null, settings: settings() });
     await p.fill('#search', 'Δοκιμαστική 10'); await p.waitForSelector('#suggestions li', { timeout: 8000 }); await p.click('#suggestions li');
