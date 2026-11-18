@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '74';
+  const APP_VERSION = '75';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -2111,6 +2111,17 @@
     }
   }
 
+  // «13:45–15:45» -> [άνοιγμα, κλείσιμο] σε δευτερόλεπτα από τώρα (null αν δεν υπάρχει ή έχει περάσει)
+  function stopWindow(st) {
+    const w = st && st.pickup && st.pickup.window;
+    const m = w && w.match(/(\d{1,2})[:.](\d{2})\s*[-–]\s*(\d{1,2})[:.](\d{2})/);
+    if (!m) return null;
+    const now = new Date(), at = (h, mi) => { const d = new Date(now); d.setHours(+h, +mi, 0, 0); return (d - now) / 1000; };
+    let o = at(m[1], m[2]), c = at(m[3], m[4]);
+    if (c <= o) c = o + 30 * 60; // π.χ. «15:45–15:45»: δίνουμε μισή ώρα
+    if (c < 0) return null;      // έχει ήδη κλείσει σήμερα
+    return [Math.max(0, o), c];
+  }
   async function optimize() {
     closeMapPopup();
     const todo = orderedStops().filter((s) => !s.done);
@@ -2148,8 +2159,12 @@
       applyWalkMatrix(D, points);
       const hasPrio = todo.some((x) => x.prio);
       if (hasPrio) applyPrioMatrix(D, points, todo.length);
-      let orderIdx = solveRoute(D, realMode, { timeLimitMs: todo.length > 40 ? 3000 : 1500 });
-      orderIdx = pullForward(D, orderIdx, realMode); // «αφού περνάς, άφησέ την»
+      // ωράρια (παραλαβές από κατάστημα): δευτερόλεπτα από τώρα
+      const windows = points.map((pt, i) => (i > 0 && i <= todo.length ? stopWindow(pt) : null));
+      const wopts = { windows, serviceSec: (S.settings.serviceMin || 0) * 60 };
+      let orderIdx = solveRoute(D, realMode, Object.assign({ timeLimitMs: todo.length > 40 ? 3000 : 1500 }, wopts));
+      orderIdx = pullForward(D, orderIdx, realMode, wopts); // «αφού περνάς, άφησέ την»
+      const late = lateStops(D, orderIdx, wopts).map((i) => points[i]);
       let orderedTodo = orderIdx.map((i) => points[i]);
       // δικλείδα: αν παρ' όλα αυτά κάτι βγήκε εκτός ομάδας, το ταξινομούμε (σταθερά) ανά ομάδα
       if (hasPrio && orderedTodo.some((x, k) => k && prioGroup(x) < prioGroup(orderedTodo[k - 1]))) {
@@ -2187,7 +2202,7 @@
       };
       save(); render(); fitAll();
       busy(false);
-      toast(approxGeom ? 'Η διαδρομή υπολογίστηκε κατά προσέγγιση (πρόβλημα σύνδεσης με τον server δρομολόγησης).' : 'Η διαδρομή είναι έτοιμη!');
+      toast(late.length ? `Προσοχή: ${late.map((x) => (x.pickup && x.pickup.name) || title(x).split(',')[0]).join(', ')} — δεν προλαβαίνεις το ωράριο` : (approxGeom ? 'Η διαδρομή υπολογίστηκε κατά προσέγγιση (πρόβλημα σύνδεσης με τον server δρομολόγησης).' : 'Η διαδρομή είναι έτοιμη!'));
       approxTries = 0; retryApprox();
       setSheet('peek'); setTimeout(fitAll, 320);
     } catch (e) {
@@ -2491,6 +2506,60 @@
   $('mapMenu').addEventListener('click', (e) => e.stopPropagation());
   document.addEventListener('pointerdown', (e) => { if (!$('mapMenu').classList.contains('hidden') && !e.target.closest('.map-ctrls')) setMenu(false); }, true);
   $('btnSettings').addEventListener('click', () => setMenu(false));
+  $('btnReport').onclick = () => { setMenu(false); openReport(); };
+
+  // ---------- Αναφορά ημέρας ----------
+  function reportData() {
+    const all = orderedStops();
+    const done = all.filter((x) => x.done && !x.failed), fail = all.filter((x) => x.failed), pend = all.filter((x) => !x.done);
+    const pk = (x) => (x.pickup ? 0 : (x.pkgs || 1));
+    const times = all.filter((x) => x.done && x.doneAt).map((x) => x.doneAt).sort((a, b) => a - b);
+    const byReason = new Map();
+    fail.forEach((x) => { const r = x.failReason || 'χωρίς λόγο'; if (!byReason.has(r)) byReason.set(r, []); byReason.get(r).push(x); });
+    return { all, done, fail, pend, pkDone: done.reduce((a, x) => a + pk(x), 0), pkFail: fail.reduce((a, x) => a + pk(x), 0),
+      pickups: done.filter((x) => x.pickup), first: times[0], last: times[times.length - 1], byReason };
+  }
+  function fmtSpan(ms) { const m = Math.round(ms / 60000); return m >= 60 ? `${Math.floor(m / 60)}ω ${m % 60}'` : `${m}'`; }
+  function reportText(r) {
+    const d = new Date().toLocaleDateString('el-GR', { weekday: 'long', day: 'numeric', month: 'numeric' });
+    const line = (x) => '  • ' + title(x).split(',').slice(0, 2).join(',') + (whoText(x) ? ' — ' + whoText(x) : '');
+    const out = [`Αναφορά ${d}`, '',
+      `✓ Παραδόθηκαν: ${r.done.length} στάσεις (${r.pkDone} δέματα)`,
+      `✗ Αποτυχίες: ${r.fail.length} στάσεις (${r.pkFail} δέματα)`];
+    if (r.pickups.length) out.push(`↑ Παραλαβές από κατάστημα: ${r.pickups.length}`);
+    if (r.pend.length) out.push(`… Εκκρεμούν: ${r.pend.length}`);
+    if (r.first) out.push(`Ώρες: ${fmtClock(r.first)} – ${fmtClock(r.last)} (${fmtSpan(r.last - r.first)})`);
+    r.byReason.forEach((xs, reason) => { out.push('', `✗ ${reason} (${xs.length}):`); xs.forEach((x) => out.push(line(x))); });
+    if (r.pend.length) { out.push('', 'Εκκρεμούν:'); r.pend.forEach((x) => out.push(line(x))); }
+    return out.join('\n');
+  }
+  function openReport() {
+    const r = reportData();
+    if (!r.all.length) { toast('Δεν υπάρχουν στάσεις σήμερα'); return; }
+    const rows = (xs) => xs.map((x) => `<li><b>${esc(title(x).split(',')[0])}</b>${whoText(x) ? `<small>${esc(whoText(x))}</small>` : ''}</li>`).join('');
+    openModal('Αναφορά ημέρας', `
+      <div class="rep-tiles">
+        <div class="rep-tile ok"><b>${r.done.length}</b><span>παραδόθηκαν</span><small>${r.pkDone} δέματα</small></div>
+        <div class="rep-tile bad"><b>${r.fail.length}</b><span>αποτυχίες</span><small>${r.pkFail} δέματα</small></div>
+        <div class="rep-tile"><b>${r.pend.length}</b><span>εκκρεμούν</span><small>${r.first ? fmtClock(r.first) + '–' + fmtClock(r.last) : '&nbsp;'}</small></div>
+      </div>
+      ${r.first ? `<p class="muted small">Από την πρώτη ως την τελευταία ολοκλήρωση: <b>${fmtSpan(r.last - r.first)}</b>${r.pickups.length ? ` · ${r.pickups.length} παραλαβές από κατάστημα` : ''}</p>` : ''}
+      ${[...r.byReason.entries()].map(([reason, xs]) => `<div class="rep-sec"><h4 class="fail-txt">${ic('x')} ${esc(reason)} (${xs.length})</h4><ul class="rep-list">${rows(xs)}</ul></div>`).join('')}
+      ${r.pend.length ? `<div class="rep-sec"><h4>Εκκρεμούν (${r.pend.length})</h4><ul class="rep-list">${rows(r.pend)}</ul></div>` : ''}
+      <div class="grid2" style="margin-top:12px">
+        <button class="btn btn-primary" id="repShare">${ic('download')} Κοινοποίηση</button>
+        <button class="btn btn-ghost" id="repCopy">Αντιγραφή</button>
+      </div>`, (b) => {
+      const txt = reportText(r);
+      b.querySelector('#repShare').onclick = async () => {
+        try { if (navigator.share) { await navigator.share({ title: 'Αναφορά ημέρας', text: txt }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+        b.querySelector('#repCopy').click();
+      };
+      b.querySelector('#repCopy').onclick = async () => {
+        try { await navigator.clipboard.writeText(txt); toast('Αντιγράφηκε'); } catch (e) { toast('Δεν ήταν δυνατή η αντιγραφή'); }
+      };
+    });
+  }
 
   // ---------- Εκκίνηση ----------
   render();

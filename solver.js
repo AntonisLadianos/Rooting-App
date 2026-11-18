@@ -11,6 +11,54 @@
 (function (global) {
   'use strict';
 
+  /*
+   * Κόστος σειράς: χρόνος οδήγησης. Με opts.windows (ωράρια): προσομοίωση ώρας άφιξης —
+   *   νωρίς  -> αναμονή μέχρι να ανοίξει (μετράει σαν χρόνος)
+   *   αργά   -> μεγάλη ποινή ανά δευτερόλεπτο καθυστέρησης
+   * windows[i] = [ανοίγει, κλείνει] σε δευτερόλεπτα από τώρα, ή null. opts.serviceSec = χρόνος σε κάθε στάση.
+   */
+  const LATE_PENALTY = 40;
+  function makeCost(D, mode, opts) {
+    opts = opts || {};
+    const n = D.length, endIdx = mode === 'fixed' ? n - 1 : -1;
+    const W = opts.windows && opts.windows.some(Boolean) ? opts.windows : null;
+    const svc = opts.serviceSec || 0;
+    if (!W) {
+      return (perm) => {
+        let c = D[0][perm[0]];
+        for (let i = 0; i < perm.length - 1; i++) c += D[perm[i]][perm[i + 1]];
+        const last = perm[perm.length - 1];
+        if (mode === 'cycle') c += D[last][0];
+        else if (mode === 'fixed') c += D[last][endIdx];
+        return c;
+      };
+    }
+    return (perm) => {
+      let t = 0, pen = 0, prev = 0;
+      for (let i = 0; i < perm.length; i++) {
+        const j = perm[i];
+        t += D[prev][j];
+        const w = W[j];
+        if (w) {
+          if (t < w[0]) t = w[0];                       // αναμονή
+          else if (t > w[1]) pen += (t - w[1]) * LATE_PENALTY;
+        }
+        t += svc; prev = j;
+      }
+      if (mode === 'cycle') t += D[prev][0];
+      else if (mode === 'fixed') t += D[prev][endIdx];
+      return t + pen;
+    };
+  }
+  // Ποιες στάσεις χάνουν το ωράριό τους με αυτή τη σειρά (για προειδοποίηση)
+  function lateStops(D, order, opts) {
+    const W = opts && opts.windows; if (!W) return [];
+    const svc = opts.serviceSec || 0, out = [];
+    let t = 0, prev = 0;
+    order.forEach((j) => { t += D[prev][j]; const w = W[j]; if (w) { if (t < w[0]) t = w[0]; else if (t > w[1] + 60) out.push(j); } t += svc; prev = j; });
+    return out;
+  }
+
   function solveRoute(D, mode, opts) {
     opts = opts || {};
     const timeLimit = opts.timeLimitMs || 1500;
@@ -21,14 +69,7 @@
     const m = nodes.length;
     if (m <= 1) return nodes.slice();
 
-    const cost = (perm) => {
-      let c = D[0][perm[0]];
-      for (let i = 0; i < perm.length - 1; i++) c += D[perm[i]][perm[i + 1]];
-      const last = perm[perm.length - 1];
-      if (mode === 'cycle') c += D[last][0];
-      else if (mode === 'fixed') c += D[last][endIdx];
-      return c;
-    };
+    const cost = makeCost(D, mode, opts);
 
     // Ακριβής λύση για λίγες στάσεις
     if (m <= 8) return bruteForce(nodes, cost);
@@ -153,14 +194,7 @@
     opts = opts || {};
     const eps = opts.eps == null ? 20 : opts.eps;
     const n = D.length, endIdx = mode === 'fixed' ? n - 1 : -1;
-    const cost = (perm) => {
-      let c = D[0][perm[0]];
-      for (let i = 0; i < perm.length - 1; i++) c += D[perm[i]][perm[i + 1]];
-      const last = perm[perm.length - 1];
-      if (mode === 'cycle') c += D[last][0];
-      else if (mode === 'fixed') c += D[last][endIdx];
-      return c;
-    };
+    const cost = makeCost(D, mode, opts);
     let cur = order.slice();
     if (cur.length < 3) return cur;
     const base = cost(cur);
@@ -187,5 +221,6 @@
 
   global.solveRoute = solveRoute;
   global.pullForward = pullForward;
-  if (typeof module !== 'undefined') module.exports = { solveRoute, pullForward };
+  global.lateStops = lateStops;
+  if (typeof module !== 'undefined') module.exports = { solveRoute, pullForward, lateStops };
 })(typeof window !== 'undefined' ? window : globalThis);

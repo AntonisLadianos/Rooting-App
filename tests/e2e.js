@@ -212,6 +212,29 @@ function expect(cond, msg) { if (!cond) throw new Error(msg); }
     return p;
   });
 
+  await test('Ωράριο: παραλαβή που ανοίγει αργότερα μπαίνει μετά, αν και είναι η πιο κοντινή', async () => {
+    const d = new Date(Date.now() + 45 * 60000), e = new Date(Date.now() + 120 * 60000);
+    const hm = (x) => String(x.getHours()).padStart(2, '0') + ':' + String(x.getMinutes()).padStart(2, '0');
+    const st = [mk('p', 35.3380, 25.1435, { pickup: { name: 'Demo Store', window: hm(d) + '–' + hm(e), pkgs: 3 } }), mk('a', 35.3315, 25.1338), mk('b', 35.3290, 25.1300), mk('c', 35.3260, 25.1250)];
+    const p = await page({ stops: st, route: null, settings: settings({ serviceMin: 5 }) });
+    await p.click('#btnOptimize'); await p.waitForTimeout(300); await idle(p); await p.waitForTimeout(300);
+    const o = (await stored(p)).route.order;
+    expect(o[0] !== 'p', 'η παραλαβή μπήκε πρώτη ενώ είναι κλειστή: ' + o.join(','));
+    return p;
+  });
+
+  await test('Αναφορά ημέρας: μετρά παραδομένα/αποτυχίες με λόγους και κείμενο για κοινοποίηση', async () => {
+    const st = [mk('a', 35.33, 25.13, { done: true, doneAt: Date.now() - 3600e3, pkgs: 2 }), mk('b', 35.33, 25.13, { done: true, doneAt: Date.now() }),
+      mk('c', 35.33, 25.13, { done: true, failed: true, failReason: 'Απών', doneAt: Date.now() - 600e3 }), mk('d', 35.33, 25.13)];
+    const p = await page({ stops: st, route: null, settings: settings() });
+    await p.click('#btnMenu'); await p.click('#btnReport'); await p.waitForSelector('.rep-tiles');
+    const tiles = await p.$$eval('.rep-tile b', (a) => a.map((x) => x.textContent));
+    expect(tiles.join(',') === '2,1,1', 'λάθος σύνολα: ' + tiles.join(','));
+    expect(/Απών \(1\)/.test(await p.textContent('#modalBody')), 'λείπει ο λόγος αποτυχίας');
+    expect(/3 δέματα/.test(await p.textContent('.rep-tile.ok')), 'λάθος δέματα');
+    return p;
+  });
+
   await test('Χειροκίνητη στάση: επιλογή είδους (παραλαβή με ωράριο)', async () => {
     const p = await page({ stops: [], route: null, settings: settings() });
     await p.fill('#search', 'Δοκιμαστική 10'); await p.waitForSelector('#suggestions li', { timeout: 8000 }); await p.click('#suggestions li');
