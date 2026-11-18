@@ -756,3 +756,6 @@ body.navigating .modal { z-index: 1100; }
 .fail-reason { color: var(--danger); }
 .fail-reason .ic { width: 13px; height: 13px; vertical-align: -2px; }
 @media (orientation: landscape) and (max-height: 560px) { .reason-bar { left: auto; right: 10px; width: min(420px, 60vw); } }
+.rb-head > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rb-undo { border: 0; background: none; color: var(--primary); font: inherit; font-weight: 700; font-size: 15px; padding: 6px 4px; flex: none; display: inline-flex; align-items: center; gap: 4px; }
+.rb-undo .ic { width: 16px; height: 16px; }

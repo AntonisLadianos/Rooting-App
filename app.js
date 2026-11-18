@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '72';
+  const APP_VERSION = '73';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -1013,10 +1013,17 @@
   function askFailReason(s) {
     let bar = $('reasonBar');
     if (!bar) { bar = document.createElement('div'); bar.id = 'reasonBar'; bar.className = 'reason-bar hidden'; document.body.appendChild(bar); }
-    bar.innerHTML = `<div class="rb-head"><span>${ic('x')} Λόγος αποτυχίας; <small>${esc(title(s).split(',')[0])}</small></span><button class="rb-close" aria-label="Κλείσιμο">✕</button></div>
+    bar.innerHTML = `<div class="rb-head"><span>${ic('x')} Λόγος αποτυχίας; <small>${esc(title(s).split(',')[0])}</small></span><button class="rb-undo">${ic('restore')} Αναίρεση</button><button class="rb-close" aria-label="Κλείσιμο">✕</button></div>
       <div class="rb-chips">${FAIL_REASONS.map((r) => `<button data-r="${esc(r)}">${esc(r)}</button>`).join('')}</div>`;
     const hide = () => { bar.classList.add('hidden'); clearTimeout(reasonTimer); };
     bar.querySelector('.rb-close').onclick = hide;
+    bar.querySelector('.rb-undo').onclick = () => {
+      hide();
+      const nav = window.RootingNav && RootingNav.active();
+      S.lastDone = null; markDone(s.id, false);
+      toast('Η στάση επανήλθε');
+      if (nav) startInAppNav(s); // πίσω στην πλοήγηση προς αυτή τη στάση
+    };
     bar.querySelectorAll('[data-r]').forEach((b) => { b.onclick = () => { if (setFailReason(s, b.dataset.r)) { hide(); toast('Λόγος: ' + s.failReason); } }; });
     bar.classList.remove('hidden');
     clearTimeout(reasonTimer); reasonTimer = setTimeout(hide, 15000);
@@ -1027,7 +1034,8 @@
     closeMapPopup();
     const s = S.stops.find((x) => x.id === id);
     if (!s) return;
-    offerUndo(`✗ Αποτυχία: ${title(s).split(',')[0]}`);
+    // χωρίς ξεχωριστό μήνυμα «Αναίρεση» (κάλυπτε τους λόγους): η αναίρεση είναι μέσα στη μπάρα των λόγων
+    const t = $('toast'); if (t.classList.contains('with-btn')) { t.classList.add('hidden'); t.classList.remove('with-btn'); }
     s.done = true; s.failed = true; s.doneAt = Date.now();
     S.lastDone = { id: s.id, at: Date.now(), failed: true };
     save(); render();

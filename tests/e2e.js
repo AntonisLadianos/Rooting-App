@@ -99,6 +99,21 @@ function expect(cond, msg) { if (!cond) throw new Error(msg); }
     return p;
   });
 
+  await test('Αποτυχία στην πλοήγηση: οι λόγοι δεν κρύβονται και η «Αναίρεση» της μπάρας γυρίζει πίσω', async () => {
+    const p = await page({ stops: STOPS(), route: ROUTE(['a', 'b', 'c']), settings: settings() });
+    await p.click('#btnNavNext'); await p.waitForTimeout(1500);
+    await p.click('#navFailMan'); await p.waitForSelector('#reasonBar:not(.hidden)', { timeout: 3000 }); await p.waitForTimeout(300);
+    const covered = await p.evaluate(() => { const t = document.getElementById('toast'), b = document.getElementById('reasonBar').getBoundingClientRect();
+      if (t.classList.contains('hidden')) return false; const r = t.getBoundingClientRect(); return r.bottom > b.top && r.top < b.bottom; });
+    expect(!covered, 'μήνυμα καλύπτει τους λόγους');
+    expect(/Στάση b/.test(await p.textContent('#navDest')), 'δεν πήγε στην επόμενη');
+    await p.click('#reasonBar .rb-undo'); await p.waitForTimeout(1500);
+    const a = (await stored(p)).stops.find((x) => x.id === 'a');
+    expect(!a.failed && !a.done, 'η αναίρεση δεν επανέφερε τη στάση');
+    expect(/Στάση a/.test(await p.textContent('#navDest')), 'η πλοήγηση δεν γύρισε στη στάση');
+    return p;
+  });
+
   await test('Αποτυχία: αλλαγή λόγου από το παράθυρο της στάσης, «Άλλο» με δικό σου κείμενο', async () => {
     const p = await page({ stops: [mk('a', 35.33, 25.13, { done: true, failed: true, failReason: 'Απών' })], route: null, settings: settings() });
     await p.click('#failStops li');
