@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '75';
+  const APP_VERSION = '76';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -931,6 +931,7 @@
       onGoogleFail: (m) => toast('Οι διαδρομές Google δεν δούλεψαν (' + String(m).slice(0, 70) + ') — συνεχίζω με τις δωρεάν'),
       onPos: (p) => { myPos = p; myHeading = null; showMe(); rememberPos(); },
       onArrive: () => showArrive(s),
+      onDepart: () => { const nb = document.querySelector('.nav-btns'); if (nb) nb.classList.remove('arrived'); },
       onExit: () => { navStop = null; showMe(); startWatch(); render(); setSheet('peek'); setTimeout(fitAll, 300); }
     });
   }

@@ -296,6 +296,9 @@
       const t = seg > 0 ? Math.max(0, Math.min(1, (loc.along - r.cum[loc.idx]) / seg)) : 0;
       target = { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
     }
+    // Πέρασες τη διεύθυνση χωρίς να πατήσεις ✓ (π.χ. δεν βρήκες να παρκάρεις): μόλις απομακρυνθείς,
+    // ο χάρτης φεύγει από το ζουμ, σε ακολουθεί ξανά και η διαδρομή ξαναβγαίνει (κύκλος και επιστροφή)
+    if (c.arrived && dist(p, c.dest) > DEPART_M && !(acc > 60)) { depart(); reroute(p); return; }
     glideTo(target, head);
     if (c.arrived) return; // μετά την άφιξη η οθόνη μένει στο «Έφτασες» (ζουμ στον προορισμό)
 
@@ -370,6 +373,16 @@
     if (!c || !c.disp) return;
     if (c.mv.setMe) c.mv.setMe({ lat: c.disp.lat, lng: c.disp.lng }, c.disp.head);
     if (!c.free && !c.arrived) c.mv.follow(c.disp, c.disp.head, c.flat);
+  }
+
+  const DEPART_M = 70; // άφιξη στα 35 μ, «έφυγες» στα 70 μ (για να μην τρεμοπαίζει)
+  function depart() {
+    const c = cur;
+    if (!c || !c.arrived) return;
+    c.arrived = false;
+    c.offCount = 0; c.spoken = {};
+    if (c.onDepart) c.onDepart();
+    if (!c.free && c.disp) c.mv.follow(c.disp, c.disp.head, c.flat); // πίσω στο κανονικό ζουμ πλοήγησης
   }
 
   function arrive() {

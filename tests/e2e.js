@@ -148,6 +148,23 @@ function expect(cond, msg) { if (!cond) throw new Error(msg); }
     return p;
   });
 
+  await test('Πλοήγηση: αν περάσεις τη διεύθυνση χωρίς ✓, το ζουμ φεύγει και σε ακολουθεί, και στην επιστροφή ξαναφτάνεις', async () => {
+    const p = await page({ stops: STOPS(), route: ROUTE(['a', 'b', 'c']), settings: settings() });
+    await p.click('#btnNavNext'); await p.waitForTimeout(2000);
+    await p.ctx.setGeolocation({ latitude: 35.33152, longitude: 25.13382 }); await p.waitForTimeout(2200);
+    expect(await p.evaluate(() => RootingNav.arrived()), 'δεν έφτασε');
+    // πέρασε 150 μ πιο κάτω
+    await p.ctx.setGeolocation({ latitude: 35.3302, longitude: 25.1338 }); await p.waitForTimeout(2500);
+    expect(!(await p.evaluate(() => RootingNav.arrived())), 'έμεινε «κολλημένο» στην άφιξη');
+    expect(!/Έφτασες/.test(await p.textContent('#navText')), 'το πάνω μήνυμα έμεινε «Έφτασες»');
+    expect(!(await p.$eval('.nav-btns', (e) => e.classList.contains('arrived'))), 'το ✓ πάλλεται ακόμα');
+    expect(/Στάση a/.test(await p.textContent('#navDest')), 'άλλαξε προορισμό');
+    // γύρισε πίσω
+    await p.ctx.setGeolocation({ latitude: 35.33152, longitude: 25.13382 }); await p.waitForTimeout(2500);
+    expect(await p.evaluate(() => RootingNav.arrived()), 'δεν ξαναέφτασε μετά τον κύκλο');
+    return p;
+  });
+
   await test('Πλοήγηση στο πλάι: ο χάρτης δεν κρύβεται από τη στήλη και τα κουμπιά χωράνε', async () => {
     const p = await page({ stops: STOPS(), route: ROUTE(['a', 'b', 'c']), settings: settings() }, 'iPhone SE landscape');
     await p.click('#btnNavNext'); await p.waitForTimeout(2000);
