@@ -785,3 +785,8 @@ body.reordering .drag-h { cursor: grabbing; }
 .rep-list li small { color: var(--muted); }
 
 .reset-note { opacity: .85; font-size: 12px; }
+
+/* ---- Πλοήγηση: όνομα πελάτη πιο ευανάγνωστο ---- */
+.nav-dest-who .who { color: var(--text); font-weight: 600; font-size: 17px; }
+.nav-dest-who .who .ic { width: 17px; height: 17px; vertical-align: -3px; color: var(--muted); }
+@media (orientation: landscape) and (max-height: 560px) { .nav-bottom .nav-dest-who .who { font-size: 15px; } }
