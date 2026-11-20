@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '76';
+  const APP_VERSION = '77';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -1859,6 +1859,15 @@
     }
     googleBadKeyWarned = false;
   }
+  // Τα δωρεάν όρια της Google μετράνε ανά ημερολογιακό μήνα: μηδενίζονται την 1η κάθε μήνα
+  // (μεσάνυχτα ώρας Καλιφόρνιας = 10:00 ή 11:00 το πρωί ώρα Ελλάδας). Οι δικοί μας μετρητές μηδενίζονται τα μεσάνυχτα της 1ης.
+  function resetText() {
+    const now = new Date();
+    const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const days = Math.ceil((next - now) / 86400000);
+    const when = next.toLocaleDateString('el-GR', { day: 'numeric', month: 'long' });
+    return `Μηδενίζεται την ${when} (${days === 1 ? 'αύριο' : 'σε ' + days + ' μέρες'}), κάθε 1η του μήνα.`;
+  }
   function openSettings(runTest) {
     const g = googleFullRouteUrl(true);
     openModal('Ρυθμίσεις', `
@@ -1885,17 +1894,17 @@
         <div class="paid-status">${ic('alert')} <b>Δικλείδα χρέωσης:</b> στο 80% του δωρεάν ορίου σε προειδοποιώ, και στο όριο σε ρωτάω αν θες να συνεχίσεις δωρεάν ή με χρέωση.
           ${['geo', 'map', 'vision', 'routes'].filter((k) => paidChoice(k)).map((k) => `<br>• ${METERS[k].name}: <b class="${paidChoice(k) === 'paid' ? 'fail-txt' : 'ok-txt'}">${paidChoice(k) === 'paid' ? 'συνεχίζω ΜΕ ΧΡΕΩΣΗ' : 'συνεχίζω δωρεάν'}</b> ως το τέλος του μήνα`).join('')}
           ${['geo', 'map', 'vision', 'routes'].some((k) => paidChoice(k)) ? '<br><button class="btn btn-ghost" id="sPaidReset" style="margin-top:6px">Αλλαγή επιλογής (θα με ξαναρωτήσει)</button>' : ''}</div>
-        <p class="muted small">Αυτόν τον μήνα: <b>${googleUsage()}</b> / 10.000 αναζητήσεις · <b>${mapUsage()}</b> / 10.000 ανοίγματα χάρτη (δωρεάν). Στις 9.500 η εφαρμογή γυρνάει μόνη της στα δωρεάν, για να μη χρεωθείς.</p>
+        <p class="muted small">Αυτόν τον μήνα: <b>${googleUsage()}</b> / 10.000 αναζητήσεις · <b>${mapUsage()}</b> / 10.000 ανοίγματα χάρτη (δωρεάν). Στις 9.500 η εφαρμογή γυρνάει μόνη της στα δωρεάν, για να μη χρεωθείς.<br><small class="reset-note">${resetText()}</small></p>
         ${S.settings.googleKey ? `
         <div class="vision-box">
           <label class="vision-row"><input id="sVision" type="checkbox" ${S.settings.visionOcr ? 'checked' : ''}> <span><b>Ανάγνωση screenshots με Google</b><br><small class="muted">Πιο ακριβής και γρήγορη. Τα screenshots στέλνονται στη Google για ανάγνωση.</small></span></label>
-          <p class="muted small">Αυτόν τον μήνα: <b>${visionUsage()}</b> / 1.000 εικόνες (δωρεάν). Στις 950 γυρνάει μόνη της στην ανάγνωση του κινητού.</p>
+          <p class="muted small">Αυτόν τον μήνα: <b>${visionUsage()}</b> / 1.000 εικόνες (δωρεάν). Στις 950 γυρνάει μόνη της στην ανάγνωση του κινητού.<br><small class="reset-note">${resetText()}</small></p>
           <button class="btn btn-ghost btn-block" id="sVisionTest">Δοκιμή ανάγνωσης Google</button>
           <p class="muted small" id="sVisionInfo"></p>
         </div>
         <div class="vision-box">
           <label class="vision-row"><input id="sGNav" type="checkbox" ${S.settings.googleNav ? 'checked' : ''}> <span><b>Πλοήγηση με διαδρομές Google</b><br><small class="muted">Σωστοί μονόδρομοι και απαγορεύσεις στροφής. Ισχύει για την πλοήγηση μέσα στην εφαρμογή.</small></span></label>
-          <p class="muted small">Αυτόν τον μήνα: <b>${routesUsage()}</b> / 10.000 διαδρομές (δωρεάν). Στις 9.500 σε ρωτάω πριν συνεχίσω.</p>
+          <p class="muted small">Αυτόν τον μήνα: <b>${routesUsage()}</b> / 10.000 διαδρομές (δωρεάν). Στις 9.500 σε ρωτάω πριν συνεχίσω.<br><small class="reset-note">${resetText()}</small></p>
           <button class="btn btn-ghost btn-block" id="sGNavTest">Δοκιμή διαδρομών Google</button>
           <p class="muted small" id="sGNavInfo"></p>
         </div>

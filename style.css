@@ -783,3 +783,5 @@ body.reordering .drag-h { cursor: grabbing; }
 .rep-list { list-style: none; margin: 0; padding: 0; }
 .rep-list li { padding: 7px 2px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; }
 .rep-list li small { color: var(--muted); }
+
+.reset-note { opacity: .85; font-size: 12px; }
