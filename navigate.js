@@ -134,6 +134,10 @@
 
   // ---------- Κατάσταση πλοήγησης ----------
   let cur = null;
+  // Τελευταία κατεύθυνση κίνησης (από το GPS). Κρατιέται από στάση σε στάση: όταν πατάς ✓ και ξεκινά η επόμενη
+  // διαδρομή είσαι σταματημένος και το GPS δεν ξέρει προς τα πού κοιτάει το αυτοκίνητο.
+  let lastHead = null; // { deg, at }
+  function knownHeading() { return lastHead && Date.now() - lastHead.at < 15 * 60000 ? lastHead.deg : null; }
 
   // ---------- Διαδρομή από Google (Routes API) — σωστοί μονόδρομοι/απαγορεύσεις ----------
   function decodePolyline(str) {
@@ -184,11 +188,11 @@
     return { pts, cum, steps, total: cum[last], duration: parseFloat(gr.duration) || (cum[last] / 8), via: 'google' };
   }
   const G_FIELDS = 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.steps.navigationInstruction,routes.legs.steps.distanceMeters,routes.legs.steps.polyline.encodedPolyline';
-  async function googleRoute(from, to, key) {
-    const ll = (p) => ({ location: { latLng: { latitude: p.lat, longitude: p.lng } } });
+  async function googleRoute(from, to, key, heading) {
+    const ll = (p, h) => ({ location: Object.assign({ latLng: { latitude: p.lat, longitude: p.lng } }, h != null ? { heading: Math.round(((h % 360) + 360) % 360) } : {}) });
     const r = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes?key=' + encodeURIComponent(key) + '&fields=' + encodeURIComponent(G_FIELDS), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ origin: ll(from), destination: ll(to), travelMode: 'DRIVE', routingPreference: 'TRAFFIC_UNAWARE', languageCode: 'el', units: 'METRIC' })
+      body: JSON.stringify({ origin: ll(from, heading), destination: ll(to), travelMode: 'DRIVE', routingPreference: 'TRAFFIC_UNAWARE', languageCode: 'el', units: 'METRIC' })
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || j.error) throw new Error((j.error && j.error.message) || ('HTTP ' + r.status));
@@ -200,19 +204,21 @@
     // πρώτα Google (αν είναι ανοιχτό στις Ρυθμίσεις και επιτρέπεται)· σε αποτυχία, η δωρεάν υπηρεσία όπως πριν
     const key = cur.googleKey && cur.googleKey();
     if (key && !cur.googleDown) {
-      try { const g = await googleRoute(from, to, key); if (cur && cur.onGoogleRoute) cur.onGoogleRoute(); return g; }
+      try { const g = await googleRoute(from, to, key, heading); if (cur && cur.onGoogleRoute) cur.onGoogleRoute(); return g; }
       catch (e) { if (cur) { cur.googleDown = true; if (cur.onGoogleFail) cur.onGoogleFail(e.message || String(e)); } }
     }
     const coords = `${from.lng.toFixed(6)},${from.lat.toFixed(6)};${to.lng.toFixed(6)},${to.lat.toFixed(6)}`;
-    const bear = heading != null ? `&bearings=${Math.round(heading)},60;` : '';
-    const url = `${cur.osrm}/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true${bear}`;
-    let lastErr;
+    const base = `${cur.osrm}/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true`;
+    const withBear = heading != null ? base + `&bearings=${Math.round(((heading % 360) + 360) % 360)},60;` : null;
+    let lastErr, useBear = !!withBear;
     for (let a = 0; a < 3; a++) {
       try {
-        const r = await fetch(url);
+        const r = await fetch(useBear ? withBear : base);
         const j = await r.json();
         if (j.code === 'Ok' && j.routes && j.routes[0]) return buildRoute(j.routes[0]);
         lastErr = new Error(j.message || j.code);
+        // δεν βγαίνει διαδρομή προς αυτή την κατεύθυνση (π.χ. μονόδρομος ανάποδα): αμέσως χωρίς κατεύθυνση
+        if (useBear) { useBear = false; a--; continue; }
       } catch (e) { lastErr = e; }
       await new Promise((res) => setTimeout(res, 800 * (a + 1)));
     }
@@ -224,7 +230,7 @@
   async function start(opts) {
     stop(true);
     cur = Object.assign({ osrm: 'https://router.project-osrm.org' }, opts, {
-      route: null, hint: 0, stepIdx: 1, spoken: {}, offCount: 0, lastReroute: 0, arrived: false, heading: null, watch: null, free: false, freeAt: 0
+      route: null, hint: 0, stepIdx: 1, spoken: {}, offCount: 0, lastReroute: 0, arrived: false, heading: knownHeading(), watch: null, free: false, freeAt: 0
     });
     el('navRecenter').classList.add('hidden');
     muted = !!opts.muted;
@@ -269,7 +275,7 @@
     if (!cur) return;
     const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
     const sp = pos.coords.speed;
-    if (pos.coords.heading != null && !isNaN(pos.coords.heading) && sp != null && sp > 1.5) cur.heading = pos.coords.heading;
+    if (pos.coords.heading != null && !isNaN(pos.coords.heading) && sp != null && sp > 1.5) { cur.heading = pos.coords.heading; lastHead = { deg: pos.coords.heading, at: Date.now() }; }
     cur.speed = sp || 0;
     cur.last = p;
     if (cur.onPos) cur.onPos(p);
@@ -452,6 +458,7 @@
 
   global.RootingNav = {
     start, stop, toggleMute, active: () => !!cur, arrived: () => !!(cur && cur.arrived),
+    _setLastHeading: (deg) => { lastHead = deg == null ? null : { deg, at: Date.now() }; },
     googleRoute, _buildGoogleRoute: buildGoogleRoute, _decodePolyline: decodePolyline,
     // για δοκιμές
     _instruction: instruction, _buildRoute: buildRoute, _locate: locate, _fmtDist: fmtDist, _spokenDist: spokenDist

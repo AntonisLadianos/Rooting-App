@@ -165,6 +165,18 @@ function expect(cond, msg) { if (!cond) throw new Error(msg); }
     return p;
   });
 
+  await test('Πλοήγηση: μετά το ✓ η νέα διαδρομή ζητιέται με την κατεύθυνση που κοιτάει το αυτοκίνητο', async () => {
+    const p = await page({ stops: STOPS(), route: ROUTE(['a', 'b', 'c']), settings: settings() });
+    const urls = [];
+    p.on('request', (r) => { if (/osrm.*\/route\//.test(r.url())) urls.push(r.url()); });
+    await p.click('#btnNavNext'); await p.waitForTimeout(1500);
+    await p.evaluate(() => RootingNav._setLastHeading(275)); // οδηγούσες προς τα δυτικά
+    await p.click('#navDoneMan'); await p.waitForTimeout(1800);
+    const last = urls[urls.length - 1] || '';
+    expect(/bearings=275,60/.test(last), 'η διαδρομή ζητήθηκε χωρίς κατεύθυνση: ' + last.slice(-60));
+    return p;
+  });
+
   await test('Πλοήγηση στο πλάι: ο χάρτης δεν κρύβεται από τη στήλη και τα κουμπιά χωράνε', async () => {
     const p = await page({ stops: STOPS(), route: ROUTE(['a', 'b', 'c']), settings: settings() }, 'iPhone SE landscape');
     await p.click('#btnNavNext'); await p.waitForTimeout(2000);
