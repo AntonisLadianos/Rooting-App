@@ -48,7 +48,8 @@ async function page(state, dev) {
   const ctx = await browser.newContext({ ...devices[dev || 'iPhone 13'], geolocation: { latitude: 35.3387, longitude: 25.1442 }, permissions: ['geolocation'], serviceWorkers: 'block' });
   await ctx.route(/tile\.openstreetmap|nominatim|googleapis|gstatic/, (r) => r.abort());
   await ctx.route(/project-osrm/, (r) => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(osrm(r.request().url())) }));
-  await ctx.route(/photon/, (r) => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(photon()) }));
+  await ctx.route(/photon/, (r) => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' },
+    body: JSON.stringify(/%CE%91%CE%BD%CF%8D%CF%80%CE%B1%CF%81%CE%BA%CF%84%CE%B7|Ανύπαρκτη/i.test(r.request().url()) ? { type: 'FeatureCollection', features: [] } : photon()) }));
   const p = await ctx.newPage();
   p.errs = [];
   p.on('pageerror', (e) => p.errs.push(e.message));
@@ -261,6 +262,21 @@ function expect(cond, msg) { if (!cond) throw new Error(msg); }
     expect(tiles.join(',') === '2,1,1', 'λάθος σύνολα: ' + tiles.join(','));
     expect(/Απών \(1\)/.test(await p.textContent('#modalBody')), 'λείπει ο λόγος αποτυχίας');
     expect(/3 δέματα/.test(await p.textContent('.rep-tile.ok')), 'λάθος δέματα');
+    return p;
+  });
+
+  await test('Προσθήκη λίστας: δεύτερο πάτημα δεν προσθέτει ξανά, το «Ξαναδοκίμασε» ψάχνει μόνο όσες δεν βρέθηκαν', async () => {
+    const p = await page({ stops: [], route: null, settings: settings() });
+    await p.click('#btnPaste'); await p.waitForSelector('#bulk');
+    await p.fill('#bulk', 'Δοκιμαστική 10, Ηράκλειο\nΔοκιμαστική 12, Ηράκλειο\nΑνύπαρκτη 99, Ηράκλειο');
+    await p.click('#bulkGo'); await p.waitForSelector('#retryFailed', { timeout: 20000 });
+    expect((await stored(p)).stops.length === 2, 'μπήκαν ' + (await stored(p)).stops.length + ' αντί για 2');
+    expect(!(await p.isVisible('#bulkGo')), 'το κουμπί «Προσθήκη» έμεινε και μπορεί να ξαναπατηθεί');
+    const searches = [];
+    p.on('request', (r) => { if (/photon/.test(r.url())) searches.push(decodeURIComponent(r.url())); });
+    await p.click('#retryFailed'); await p.waitForTimeout(2500);
+    expect((await stored(p)).stops.length === 2, 'το «Ξαναδοκίμασε» πρόσθεσε διπλές');
+    expect(searches.length > 0 && searches.every((u) => /Ανύπαρκτη/.test(u)), 'το «Ξαναδοκίμασε» έψαξε και άλλες διευθύνσεις');
     return p;
   });
 

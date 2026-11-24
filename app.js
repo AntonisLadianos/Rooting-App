@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '80';
+  const APP_VERSION = '81';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -1500,7 +1500,7 @@
       btn.disabled = true;
       if (!myPos) { btn.textContent = 'Εντοπισμός θέσης…'; try { await getPosition(6000); } catch (e) { /* συνεχίζουμε χωρίς */ } }
       const out = await geocodeBatch(lines.map((l) => ({ addr: l })), (t) => { btn.textContent = t; });
-      btn.disabled = false; btn.textContent = 'Προσθήκη';
+      doneAdding(b, btn, ['#bulk', 'p.muted.small']);
       showBatchResult(log, btn, out);
     };
   });
@@ -1559,6 +1559,11 @@
     return { added, failed, netErr };
   }
 
+  function doneAdding(b, btn, hideSel) {
+    hideSel.forEach((sel) => b.querySelectorAll(':scope > ' + sel).forEach((el) => { el.style.display = 'none'; }));
+    btn.style.display = 'none';
+    btn.disabled = true;
+  }
   // Αποτέλεσμα + κουμπί «Ξαναδοκίμασε» για όσες δεν βρέθηκαν
   function showBatchResult(logEl, btn, out, rerun) {
     const { added, failed, netErr } = out;
@@ -1586,12 +1591,12 @@
       logEl.querySelector('#retryFailed').onclick = async () => {
         logEl.querySelector('#retryFailed').disabled = true;
         failed.forEach((f) => { f.err = false; });
-        const again = await geocodeBatch(failed, (t) => { btn.textContent = t; });
-        btn.textContent = 'Προσθήκη';
+        const rb = logEl.querySelector('#retryFailed');
+        const again = await geocodeBatch(failed, (t) => { rb.textContent = t; });
         again.added += added;
         showBatchResult(logEl, btn, again, rerun);
       };
-    } else setTimeout(closeModal, 900);
+    } else setTimeout(closeModal, 600);
   }
 
   // ---------- Διευθύνσεις από screenshot ----------
@@ -1823,7 +1828,9 @@
         if (merged) { save(); render(); }
         const out = await geocodeBatch(chosen.filter((x) => !x.it.mergeInto && !x.known).map((x) => ({ addr: x.addr, name: x.it.name, phone: x.it.phone, pkgs: x.it.pkgs, people: x.it.people, codes: x.it.codes, hub: x.it.hub, pickup: x.it.pickup, store: x.it.store })), (t) => { btn.textContent = t; });
         out.added += merged;
-        btn.disabled = false; btn.textContent = 'Προσθήκη';
+        // οι στάσεις μπήκαν: η λίστα και το κουμπί φεύγουν (όχι ξανά «Προσθήκη» = διπλές στάσεις).
+        // Μένει μόνο το αποτέλεσμα, και για όσες δεν βρέθηκαν το «Ξαναδοκίμασε» που ψάχνει ΜΟΝΟ αυτές.
+        doneAdding(b, btn, ['.found-list', '.tally', 'p.muted.small']);
         showBatchResult(b.querySelector('#foundLog'), btn, out);
       };
     });
