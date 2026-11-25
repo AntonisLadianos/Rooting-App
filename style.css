@@ -792,5 +792,9 @@ body.reordering .drag-h { cursor: grabbing; }
 @media (orientation: landscape) and (max-height: 560px) { .nav-bottom .nav-dest-who .who { font-size: 16px; } }
 
 /* ---- Πληκτρολόγιο ανοιχτό: το παράθυρο (modal) κάθεται πάνω από το πληκτρολόγιο ---- */
-body.kb-open .modal { top: var(--vvtop, 0px) !important; bottom: auto !important; height: var(--vvh, 100%) !important; }
-body.kb-open .modal-sheet { max-height: calc(var(--vvh, 100vh) - 8px); }
+/* το σκοτεινό φόντο μένει σε ΟΛΗ την οθόνη (και κάτω από το πληκτρολόγιο, χωρίς χάρτη από πίσω)·
+   το παράθυρο γίνεται κάρτα στο πάνω μέρος του ορατού κομματιού */
+body.kb-open .modal { align-items: flex-start; }
+body.kb-open .modal-backdrop { background: rgba(0,0,0,.62); }
+body.kb-open .modal-sheet { margin: calc(var(--vvtop, 0px) + max(var(--safe-top), 12px)) 10px 0; width: calc(100% - 20px); border-radius: 18px;
+  max-height: calc(var(--vvh, 100vh) - max(var(--safe-top), 12px) - 14px); box-shadow: 0 12px 40px rgba(0,0,0,.45); }
