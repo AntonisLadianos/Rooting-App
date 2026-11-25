@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '82';
+  const APP_VERSION = '83';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -1279,6 +1279,26 @@
     if (onMount) onMount($('modalBody'));
   }
   function closeModal() { $('modal').classList.add('hidden'); $('modalBody').innerHTML = ''; }
+  // Πληκτρολόγιο iPhone: το παράθυρο ανεβαίνει ακριβώς πάνω από το πληκτρολόγιο (αντί να κρύβεται από κάτω του)
+  (function keyboardAware() {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const upd = () => {
+      const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      const open = kb > 80;
+      document.body.classList.toggle('kb-open', open);
+      const r = document.documentElement.style;
+      r.setProperty('--vvh', vv.height + 'px');
+      r.setProperty('--vvtop', vv.offsetTop + 'px');
+      if (open) {
+        const a = document.activeElement;
+        if (a && a.closest && a.closest('#modal')) setTimeout(() => { try { a.scrollIntoView({ block: 'nearest' }); } catch (e) { /* ignore */ } }, 50);
+      }
+    };
+    vv.addEventListener('resize', upd);
+    vv.addEventListener('scroll', upd);
+    upd();
+  })();
   document.querySelectorAll('[data-close]').forEach((el) => el.addEventListener('click', closeModal));
 
   function openStop(id) {

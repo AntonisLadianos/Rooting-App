@@ -294,6 +294,27 @@ function expect(cond, msg) { if (!cond) throw new Error(msg); }
     return p;
   });
 
+  await test('Πληκτρολόγιο: το παράθυρο «Αλλαγή διεύθυνσης» ανεβαίνει πάνω από το πληκτρολόγιο', async () => {
+    const p = await page({ stops: STOPS(), route: ROUTE(['a', 'b', 'c']), settings: settings() });
+    // ψεύτικο πληκτρολόγιο iPhone: το ορατό κομμάτι της οθόνης μικραίνει
+    await p.evaluate(() => {
+      const fake = new EventTarget(); fake.height = innerHeight; fake.offsetTop = 0;
+      Object.defineProperty(window, '__vv', { value: fake });
+    });
+    await p.evaluate(() => document.getElementById('stops').scrollIntoView()); await p.waitForTimeout(300);
+    await p.click('#stops li >> nth=0'); await p.waitForSelector('#mAddr'); await p.click('#mAddr'); await p.waitForSelector('#pSearch');
+    const kbTop = await p.evaluate(() => innerHeight - 330);
+    await p.evaluate((h) => {
+      const vv = window.visualViewport;
+      Object.defineProperty(vv, 'height', { configurable: true, get: () => h });
+      vv.dispatchEvent(new Event('resize'));
+    }, kbTop);
+    await p.waitForTimeout(300);
+    const r = await p.evaluate(() => { const i = document.getElementById('pSearch').getBoundingClientRect(), m = document.querySelector('.modal-sheet').getBoundingClientRect(); return { inpBottom: i.bottom, sheetBottom: m.bottom }; });
+    expect(r.sheetBottom <= kbTop + 1 && r.inpBottom <= kbTop, 'το παράθυρο είναι κάτω από το πληκτρολόγιο: ' + JSON.stringify(r) + ' πληκτρολόγιο από ' + kbTop);
+    return p;
+  });
+
   await test('Χειροκίνητη στάση: επιλογή είδους (παραλαβή με ωράριο)', async () => {
     const p = await page({ stops: [], route: null, settings: settings() });
     await p.fill('#search', 'Δοκιμαστική 10'); await p.waitForSelector('#suggestions li', { timeout: 8000 }); await p.click('#suggestions li');

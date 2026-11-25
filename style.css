@@ -790,3 +790,7 @@ body.reordering .drag-h { cursor: grabbing; }
 .nav-dest-who .who { color: var(--text); font-weight: 600; font-size: 19px; }
 .nav-dest-who .who .ic { width: 18px; height: 18px; vertical-align: -3px; color: var(--muted); }
 @media (orientation: landscape) and (max-height: 560px) { .nav-bottom .nav-dest-who .who { font-size: 16px; } }
+
+/* ---- Πληκτρολόγιο ανοιχτό: το παράθυρο (modal) κάθεται πάνω από το πληκτρολόγιο ---- */
+body.kb-open .modal { top: var(--vvtop, 0px) !important; bottom: auto !important; height: var(--vvh, 100%) !important; }
+body.kb-open .modal-sheet { max-height: calc(var(--vvh, 100vh) - 8px); }
