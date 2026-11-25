@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '84';
+  const APP_VERSION = '85';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -1290,11 +1290,30 @@
       const r = document.documentElement.style;
       r.setProperty('--vvh', vv.height + 'px');
       r.setProperty('--vvtop', vv.offsetTop + 'px');
-      if (open) {
-        const a = document.activeElement;
-        if (a && a.closest && a.closest('#modal')) setTimeout(() => { try { a.scrollIntoView({ block: 'nearest' }); } catch (e) { /* ignore */ } }, 50);
+      // απόσταση από το κάτω μέρος του παραθύρου ως την κορυφή του πληκτρολογίου → η κάρτα κάθεται ακριβώς από πάνω
+      const m = $('modal');
+      const mb = m && !m.classList.contains('hidden') ? m.getBoundingClientRect().bottom : window.innerHeight;
+      r.setProperty('--kbpad', Math.max(0, mb - (vv.offsetTop + vv.height)) + 'px');
+      if (open && m && !m.classList.contains('hidden')) {
+        // το iPhone «σπρώχνει» όλη τη σελίδα προς τα πάνω όταν ανοίγει το πληκτρολόγιο — τη γυρίζουμε πίσω
+        if (vv.offsetTop > 0 || window.scrollY > 0) requestAnimationFrame(() => { window.scrollTo(0, 0); if (document.scrollingElement) document.scrollingElement.scrollTop = 0; });
+        const a = document.activeElement, sh = m.querySelector('.modal-sheet');
+        if (a && sh && sh.contains(a)) setTimeout(() => {
+          const ar = a.getBoundingClientRect(), sr = sh.getBoundingClientRect();
+          if (ar.bottom > sr.bottom - 8) sh.scrollTop += ar.bottom - sr.bottom + 12;
+          else if (ar.top < sr.top + 8) sh.scrollTop -= sr.top - ar.top + 12;
+        }, 60);
       }
     };
+    // όσο είναι ανοιχτό ένα παράθυρο, ΤΙΠΟΤΑ από πίσω δεν κάνει scroll (μόνο το περιεχόμενο του παραθύρου, αν δεν χωράει)
+    document.addEventListener('touchmove', (e) => {
+      const m = $('modal');
+      if (!m || m.classList.contains('hidden')) return;
+      const sh = m.querySelector('.modal-sheet');
+      if (e.target.closest && e.target.closest('input, textarea')) return; // επιλογή κειμένου
+      if (sh && sh.contains(e.target) && sh.scrollHeight > sh.clientHeight + 1) return;
+      e.preventDefault();
+    }, { passive: false });
     vv.addEventListener('resize', upd);
     vv.addEventListener('scroll', upd);
     upd();

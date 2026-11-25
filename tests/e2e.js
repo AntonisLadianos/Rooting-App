@@ -311,7 +311,7 @@ function expect(cond, msg) { if (!cond) throw new Error(msg); }
     }, kbTop);
     await p.waitForTimeout(300);
     const r = await p.evaluate(() => { const i = document.getElementById('pSearch').getBoundingClientRect(), m = document.querySelector('.modal-sheet').getBoundingClientRect(), bd = document.querySelector('.modal-backdrop').getBoundingClientRect(); return { inpBottom: i.bottom, sheetBottom: m.bottom, bdTop: bd.top, bdBottom: bd.bottom, vh: innerHeight }; });
-    expect(r.sheetBottom <= kbTop + 1 && r.inpBottom <= kbTop, 'το παράθυρο είναι κάτω από το πληκτρολόγιο: ' + JSON.stringify(r) + ' πληκτρολόγιο από ' + kbTop);
+    expect(r.sheetBottom <= kbTop + 1 && r.sheetBottom >= kbTop - 30 && r.inpBottom <= kbTop, 'το παράθυρο δεν κάθεται ακριβώς πάνω από το πληκτρολόγιο: ' + JSON.stringify(r) + ' πληκτρολόγιο από ' + kbTop);
     expect(r.bdTop <= 0 && r.bdBottom >= r.vh - 1, 'το σκοτεινό φόντο δεν καλύπτει όλη την οθόνη (φαίνεται ο χάρτης από πίσω)');
     return p;
   });

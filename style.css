@@ -792,9 +792,9 @@ body.reordering .drag-h { cursor: grabbing; }
 @media (orientation: landscape) and (max-height: 560px) { .nav-bottom .nav-dest-who .who { font-size: 16px; } }
 
 /* ---- Πληκτρολόγιο ανοιχτό: το παράθυρο (modal) κάθεται πάνω από το πληκτρολόγιο ---- */
-/* το σκοτεινό φόντο μένει σε ΟΛΗ την οθόνη (και κάτω από το πληκτρολόγιο, χωρίς χάρτη από πίσω)·
-   το παράθυρο γίνεται κάρτα στο πάνω μέρος του ορατού κομματιού */
-body.kb-open .modal { align-items: flex-start; }
+/* το σκοτεινό φόντο μένει σε ΟΛΗ την οθόνη (και κάτω από το πληκτρολόγιο)·
+   το παράθυρο γίνεται κάρτα που κάθεται ακριβώς πάνω από το πληκτρολόγιο */
+body.kb-open .modal { align-items: flex-end; overscroll-behavior: none; touch-action: none; }
 body.kb-open .modal-backdrop { background: rgba(0,0,0,.62); }
-body.kb-open .modal-sheet { margin: calc(var(--vvtop, 0px) + max(var(--safe-top), 12px)) 10px 0; width: calc(100% - 20px); border-radius: 18px;
-  max-height: calc(var(--vvh, 100vh) - max(var(--safe-top), 12px) - 14px); box-shadow: 0 12px 40px rgba(0,0,0,.45); }
+body.kb-open .modal-sheet { margin: 0 10px calc(var(--kbpad, 0px) + 8px); width: calc(100% - 20px); border-radius: 18px; touch-action: pan-y; overscroll-behavior: contain;
+  max-height: calc(var(--vvh, 100vh) - max(var(--safe-top), 12px) - 16px); box-shadow: 0 12px 40px rgba(0,0,0,.45); }
