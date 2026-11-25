@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '81';
+  const APP_VERSION = '82';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -1290,6 +1290,7 @@
       ${s.pkgs ? `<p class="pkg-line"><b class="pkg-badge${s.pkgs > 1 ? ' multi' : ''}">${ic('package')} ${pkgsText(s.pkgs)}</b></p>` : ''}
       ${(s.people || []).length ? `<ul class="people">${s.people.map((p) => `<li><span>${ic('user')} ${esc(p.name || '—')}${(p.pkgs || 1) > 1 || s.people.length > 1 ? ` <b>· ${pkgsText(p.pkgs || 1)}</b>` : ''}</span>${p.phone ? `<a class="btn btn-ghost" href="tel:${esc(p.phone.replace(/\s/g, ''))}">${ic('phone')} ${esc(p.phone)}</a>` : ''}</li>`).join('')}</ul>` : ''}
       ${s.orig ? `<p class="muted small">Στον χάρτη: ${esc(s.label)}${s.exact === false ? ' <b class="approx">(κατά προσέγγιση — δεν βρέθηκε ο ακριβής αριθμός)</b>' : ''}</p>` : ''}
+      <button class="btn btn-ghost btn-block" id="mAddr">${ic('note')} Αλλαγή διεύθυνσης</button>
       <button class="btn btn-ghost btn-block" id="mFix">${ic('locate')} Λάθος θέση; Διόρθωση</button>
       <button class="btn btn-ghost btn-block" id="mType">${ic('note')} Είδος: <b>${esc((STOP_TYPES.find((x) => x.k === stopTypeOf(s)) || {}).t || '')}</b> — αλλαγή</button>
       <div class="grid2">
@@ -1318,6 +1319,7 @@
       if (mf) mf.onclick = () => { persist(); markFailed(s.id); closeModal(); };
       b.querySelector('#mDel').onclick = () => { deleteStop(s.id, true); closeModal(); };
       b.querySelector('#mFix').onclick = () => { persist(); fixStopPlace(s.id); };
+      b.querySelector('#mAddr').onclick = () => { persist(); changeStopAddress(s.id); };
       b.querySelectorAll('#mReason [data-r]').forEach((bt) => { bt.onclick = () => { if (setFailReason(s, bt.dataset.r)) openStop(s.id); }; });
       b.querySelector('#mType').onclick = () => {
         persist();
@@ -1344,6 +1346,29 @@
         <span class="grp-txt"><b>${esc(title(s))}</b>${whoText(s) ? `<small>${esc(whoText(s))}</small>` : ''}${s.exact === false ? `<small class="approx">${ic('alert')} κατά προσέγγιση</small>` : ''}</span></button></li>`).join('')}</ul>
       <p class="muted small">Αν είναι διαφορετικές διευθύνσεις, κάποια μπήκε σε λάθος θέση: πάτα τη και «Λάθος θέση; Διόρθωση».</p>`, (b) => {
       b.querySelectorAll('.grp-item').forEach((bt) => { bt.onclick = () => openStop(bt.dataset.id); });
+    });
+  }
+
+  // Αλλαγή διεύθυνσης στάσης: νέα διεύθυνση (π.χ. ο πελάτης ζήτησε αλλού), κρατά πελάτη, δέματα, σημείωση, σειρά
+  function changeStopAddress(id) {
+    const s = S.stops.find((x) => x.id === id);
+    if (!s) return;
+    let inp = null;
+    pickPlace('Αλλαγή διεύθυνσης', `<p class="small">Τώρα: <b>${esc(title(s))}</b></p>
+      <p class="muted small">Γράψε τη νέα διεύθυνση και διάλεξε το σωστό αποτέλεσμα. Ο πελάτης, τα δέματα και η σημείωση μένουν ίδια.</p>`,
+    (it) => {
+      const typed = inp ? inp.value.trim() : '';
+      s.orig = typed && /\d/.test(typed) ? typed : it.label;
+      s.label = it.label; s.lat = it.lat; s.lng = it.lng; s.exact = it.exact !== false;
+      if (S.route) { S.route.legs = null; S.route.geometry = null; scheduleLegs(); }
+      save(); render();
+      if (mv) mv.setView(s.lat, s.lng, Math.max(mv.getZoom(), 16));
+      toast('Η διεύθυνση άλλαξε' + (S.route ? ' — πάτα «Νέα σειρά» αν θες να ξαναβγεί η σειρά' : ''));
+    },
+    (b) => {
+      inp = b.querySelector('#pSearch');
+      inp.value = title(s).replace(/\s*\b\d{3}\s?\d{2}\b/, '').replace(/[,\s]+$/, '');
+      inp.focus(); inp.select();
     });
   }
 

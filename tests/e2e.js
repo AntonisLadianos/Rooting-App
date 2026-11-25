@@ -280,6 +280,20 @@ function expect(cond, msg) { if (!cond) throw new Error(msg); }
     return p;
   });
 
+  await test('Αλλαγή διεύθυνσης στάσης: νέα θέση, ίδιος πελάτης/δέματα/σειρά', async () => {
+    const st = STOPS(); st[1].pkgs = 3; st[1].note = 'κουδούνι 2';
+    const p = await page({ stops: st, route: ROUTE(['a', 'b', 'c']), settings: settings() });
+    await p.evaluate(() => document.getElementById('stops').scrollIntoView()); await p.waitForTimeout(300);
+    await p.click('#stops li >> nth=1'); await p.waitForSelector('#mAddr'); await p.click('#mAddr');
+    await p.waitForSelector('#pSearch'); await p.fill('#pSearch', 'Δοκιμαστική 10, Ηράκλειο');
+    await p.waitForSelector('#pRes li', { timeout: 8000 }); await p.click('#pRes li >> nth=0'); await p.waitForTimeout(400);
+    const s = await stored(p), b = s.stops.find((x) => x.id === 'b');
+    expect(b.orig === 'Δοκιμαστική 10, Ηράκλειο' && Math.abs(b.lat - 35.33) < 1e-6, 'η διεύθυνση δεν άλλαξε: ' + b.orig);
+    expect(b.pkgs === 3 && b.note === 'κουδούνι 2' && b.people[0].name === 'Πελάτης b', 'χάθηκαν στοιχεία του πελάτη');
+    expect(s.route && s.route.order.join('') === 'abc', 'άλλαξε η σειρά');
+    return p;
+  });
+
   await test('Χειροκίνητη στάση: επιλογή είδους (παραλαβή με ωράριο)', async () => {
     const p = await page({ stops: [], route: null, settings: settings() });
     await p.fill('#search', 'Δοκιμαστική 10'); await p.waitForSelector('#suggestions li', { timeout: 8000 }); await p.click('#suggestions li');
