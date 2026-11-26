@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '89';
+  const APP_VERSION = '90';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -923,7 +923,7 @@
     const who = (s.people || []).map((p) => p.name).filter(Boolean).join(' · ') || s.note || '';
     $('navWho').innerHTML = [who ? `<span class="who">${ic('user')} ${esc(who)}</span>` : '', s.pkgs ? `<b class="pkg-badge${s.pkgs > 1 ? ' multi' : ''}">${ic('package')} ${pkgsText(s.pkgs)}</b>` : ''].filter(Boolean).join('');
     RootingNav.start({
-      dest: { lat: s.lat, lng: s.lng, title: title(s) },
+      dest: { lat: s.lat, lng: s.lng, title: title(s), speak: s.label && s.label !== title(s) ? s.label.split(',')[0] : '' }, // ο χάρτης γράφει τη διεύθυνση με πεζά/τόνους — η φωνή τη λέει σωστά
       from: myPos, mv, osrm: OSRM, muted: !!S.settings.navMuted, flat: !!S.settings.navFlat,
       getPos: () => getPosition(8000),
       googleKey: () => (routesOn() ? S.settings.googleKey : null),

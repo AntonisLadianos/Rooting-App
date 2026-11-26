@@ -147,6 +147,17 @@
     if (vlog.length > 150) vlog = vlog.slice(-150);
     clearTimeout(vlogT); vlogT = setTimeout(() => { try { localStorage.setItem('rooting.voicelog', JSON.stringify(vlog)); } catch (e) { /* ignore */ } }, 500);
   }
+  // Κείμενο για τη φωνή: οι οδηγίες της Google γράφουν «Στροφή αριστερά στη(ν) …» — η φωνή διάβαζε το «(ν)»
+  // κομμένο/σπαστό. Και τα ΚΕΦΑΛΑΙΑ (από τις κάρτες) τα διαβάζει άσχημα.
+  function speakable(t) {
+    return String(t || '')
+      .replace(/([A-Za-zΑ-Ωα-ωά-ώΆ-Ώϊϋΐΰ]+)\(([A-Za-zα-ωά-ώ]{1,3})\)/g, '$1$2') // στη(ν) → στην
+      .replace(/\(([^)]*)\)/g, ', $1,')
+      .replace(/(^|[,.]\s*|και (?:αμέσως )?μετά\s+)στροφή (αριστερά|δεξιά|ελαφρώς|απότομα)/gi, (m, pre, dir) => pre + (pre ? 'στρίψε ' : 'Στρίψε ') + dir)
+      .replace(/(^|\s)Λεωφ\.\s*/g, '$1Λεωφόρος ').replace(/(^|\s)Αγ\.\s*/g, '$1Αγίου ').replace(/(^|\s)Οδ\.\s*/g, '$1Οδός ')
+      .replace(/[A-ZΑ-ΩΆ-Ώ]{3,}(?:\s+[A-ZΑ-ΩΆ-Ώ0-9]{2,})*/g, (w) => w.toLowerCase())
+      .replace(/\s+/g, ' ').replace(/\s+,/g, ',').trim();
+  }
   function pump() {
     if (talking || muted || !global.speechSynthesis) return;
     while (queue.length) {
@@ -155,7 +166,7 @@
       const ss = speechSynthesis;
       try {
         if (ss.paused) ss.resume();
-        const text = typeof it.text === 'function' ? it.text() : it.text;
+        const text = speakable(typeof it.text === 'function' ? it.text() : it.text);
         const u = utter(text), me = { key: it.key };
         talking = me;
         const t0 = Date.now();
@@ -485,7 +496,7 @@
   function arrive() {
     const c = cur;
     c.arrived = true;
-    queue = queue.filter((q) => q.key == null); say('Έφτασες. ' + (c.dest.title ? c.dest.title.split(',')[0] : ''), true);
+    queue = queue.filter((q) => q.key == null); say('Έφτασες. ' + (c.dest.speak || (c.dest.title ? c.dest.title.split(',')[0] : '')), true);
     if (navigator.vibrate) navigator.vibrate([60, 80, 60]);
     el('navText').textContent = 'Έφτασες στον προορισμό';
     el('navArrow').innerHTML = global.ic ? global.ic('flag', 'nav-flag') : '🏁'; el('navDist').textContent = ''; el('navThen').textContent = '';
@@ -554,6 +565,7 @@
     googleRoute, _buildGoogleRoute: buildGoogleRoute, _decodePolyline: decodePolyline,
     // για δοκιμές
     voiceLog: () => vlog.slice(), clearVoiceLog: () => { vlog = []; try { localStorage.removeItem('rooting.voicelog'); } catch (e) { /* ignore */ } },
+    _speakable: speakable,
     _instruction: instruction, _buildRoute: buildRoute, _locate: locate, _fmtDist: fmtDist, _spokenDist: spokenDist
   };
 })(window);
