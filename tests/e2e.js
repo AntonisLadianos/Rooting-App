@@ -215,6 +215,33 @@ function expect(cond, msg) { if (!cond) throw new Error(msg); }
     return p;
   });
 
+  await test('Φωνή: σωπαίνει όσο μιλάς στο τηλέφωνο και μετά λέει την τρέχουσα οδηγία', async () => {
+    const p = await page({ stops: STOPS(), route: ROUTE(['a', 'b', 'c']), settings: settings() });
+    await p.evaluate(() => {
+      window.__said = []; window.__cancels = 0;
+      const ss = { speaking: false, pending: false, paused: false, getVoices: () => [], resume() {}, cancel() { window.__cancels++; },
+        speak(u) { window.__said.push(u.text); setTimeout(() => u.onend && u.onend(), 50); } };
+      Object.defineProperty(window, 'speechSynthesis', { configurable: true, get: () => ss });
+      const as = new EventTarget(); as.state = 'active';
+      Object.defineProperty(navigator, 'audioSession', { configurable: true, get: () => as });
+      window.__call = (on) => { as.state = on ? 'interrupted' : 'active'; as.dispatchEvent(new Event('statechange')); };
+    });
+    await p.click('#btnNavNext'); await p.waitForTimeout(2000);
+    // το audioSession στήθηκε μετά τη φόρτωση: το navigate.js δεν το άκουσε — το δοκιμάζουμε μέσω του ελέγχου στο «visible»
+    await p.evaluate(() => { window.__call(true); document.dispatchEvent(new Event('visibilitychange')); });
+    const n0 = await p.evaluate(() => window.__said.length);
+    await p.ctx.setGeolocation({ latitude: 35.3360, longitude: 25.1400 }); await p.waitForTimeout(1500);
+    await p.ctx.setGeolocation({ latitude: 35.3340, longitude: 25.1370 }); await p.waitForTimeout(1500);
+    const inCall = await p.evaluate(() => ({ n: window.__said.length, c: window.__cancels }));
+    expect(inCall.n === n0, 'μίλησε μέσα στην κλήση: ' + JSON.stringify(await p.evaluate(() => window.__said.slice(-3))));
+    expect(inCall.c >= 1, 'δεν σταμάτησε τη φωνή όταν μπήκε η κλήση');
+    await p.evaluate(() => { window.__call(false); document.dispatchEvent(new Event('visibilitychange')); });
+    await p.waitForTimeout(1800);
+    const after = await p.evaluate(() => window.__said.slice(-1)[0] || '');
+    expect(/^Σε \d+/.test(after), 'μετά την κλήση δεν είπε την τρέχουσα οδηγία: ' + after);
+    return p;
+  });
+
   await test('Πλοήγηση: αν περάσεις τη διεύθυνση χωρίς ✓, το ζουμ φεύγει και σε ακολουθεί, και στην επιστροφή ξαναφτάνεις', async () => {
     const p = await page({ stops: STOPS(), route: ROUTE(['a', 'b', 'c']), settings: settings() });
     await p.click('#btnNavNext'); await p.waitForTimeout(2000);

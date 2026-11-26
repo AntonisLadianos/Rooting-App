@@ -154,13 +154,45 @@
   function carMode(v) { return v ? 'silent' : ''; } // true/'silent' (και το παλιό 'repeat') → αθόρυβη λύση
   let actx = null, keepSrc = null, keepUntil = 0;
   function audioUnlock() { // ΣΥΓΧΡΟΝΑ μέσα σε πάτημα
-    if (carAudio !== 'silent') return;
     try {
       const AC = global.AudioContext || global.webkitAudioContext;
       if (!AC) return;
-      if (!actx) actx = new AC();
-      if (actx.state !== 'running') actx.resume();
+      if (!actx) { actx = new AC(); actx.addEventListener('statechange', checkCall); } // και για να καταλαβαίνουμε τις κλήσεις
+      if (carAudio === 'silent' && actx.state !== 'running') actx.resume();
     } catch (e) { /* ignore */ }
+  }
+
+  // ---------- Τηλεφωνική κλήση: η φωνή σωπαίνει ----------
+  // Το iPhone δεν λέει σε μια σελίδα «μιλάει στο τηλέφωνο», αλλά της «κόβει» τον ήχο (κατάσταση interrupted).
+  // Όσο κρατάει αυτό, δεν λέμε τίποτα· όταν κλείσεις, λέμε την οδηγία που ισχύει εκείνη τη στιγμή.
+  let inCall = false;
+  function interrupted() {
+    const as = navigator.audioSession;
+    return !!((as && as.state === 'interrupted') || (actx && actx.state === 'interrupted'));
+  }
+  function checkCall() { if (cur) setCall(interrupted()); }
+  function setCall(on) {
+    if (on === inCall) return;
+    inCall = on;
+    if (on) { hush(); return; }
+    setTimeout(() => {
+      if (inCall || !cur || muted) return;
+      try { if (actx && carAudio === 'silent' && actx.state !== 'running') actx.resume(); if (global.speechSynthesis) speechSynthesis.resume(); } catch (e) { /* ignore */ }
+      const l = currentLine();
+      if (l) say(l);
+    }, 1200);
+  }
+  try {
+    const as = navigator.audioSession;
+    if (as && as.addEventListener) as.addEventListener('statechange', checkCall);
+  } catch (e) { /* ignore */ }
+  // η οδηγία που ισχύει τώρα (μετά από κλήση ή σίγαση)
+  function currentLine() {
+    const c = cur;
+    if (!c || !c.route || c.arrived || c.toMan == null) return '';
+    const st = c.route.steps[c.stepIdx];
+    if (!st) return '';
+    return st.step.maneuver.type === 'arrive' ? `Σε ${spokenDist(c.toMan)}, ο προορισμός σου` : `Σε ${spokenDist(c.toMan)}, ${lc(st.text)}`;
   }
   function keepAlive(ms) {
     if (carAudio !== 'silent' || !actx) return;
@@ -177,7 +209,7 @@
     } catch (e) { keepSrc = null; }
   }
   function pump() {
-    if (talking || muted || !global.speechSynthesis) return;
+    if (talking || muted || inCall || !global.speechSynthesis) return;
     while (queue.length) {
       const it = queue.shift();
       if (it.valid && !it.valid()) continue;
@@ -202,6 +234,7 @@
   }
   function enqueue(it, front) {
     if (muted || !global.speechSynthesis) return false;
+    if (inCall || interrupted()) { if (cur) setCall(true); return false; } // σε κλήση: δεν λέγεται (ούτε αργότερα)
     // μια νεότερη φράση για την ίδια στροφή αντικαθιστά όποια περιμένει ακόμα στην ουρά
     if (it.key != null) queue = queue.filter((q) => q.key !== it.key);
     if (front) queue.unshift(it); else queue.push(it);
@@ -331,7 +364,7 @@
       route: null, hint: 0, stepIdx: 1, spoken: {}, offCount: 0, lastReroute: 0, arrived: false, heading: knownHeading(), watch: null, free: false, freeAt: 0
     });
     el('navRecenter').classList.add('hidden');
-    muted = !!opts.muted; carAudio = carMode(opts.carAudio);
+    muted = !!opts.muted; carAudio = carMode(opts.carAudio); inCall = interrupted();
     unlockVoice('Ξεκινάμε'); // πρώτο πράγμα, πριν από κάθε await
     document.body.classList.add('navigating');
     if (opts.mv && opts.mv.dimRoute) opts.mv.dimRoute(true); // η γραμμή όλου του δρομολογίου γίνεται αχνή
@@ -568,11 +601,12 @@
   function toggleMute() {
     muted = !muted;
     if (muted) hush();
-    if (!muted) unlockVoice('Φωνή ενεργή');
+    if (!muted) unlockVoice(currentLine() || 'Φωνή ενεργή'); // ξαναπατώντας το ηχείο, ακούς πού είσαι
     el('navMute').innerHTML = global.ic ? global.ic(muted ? 'mute' : 'vol') : (muted ? '🔇' : '🔊');
     return muted;
   }
   document.addEventListener('visibilitychange', () => {
+    if (cur && document.visibilityState === 'visible') checkCall(); // γύρισες από την εφαρμογή Τηλέφωνο
     if (cur && document.visibilityState === 'visible' && navigator.wakeLock) navigator.wakeLock.request('screen').then((w) => { if (cur) cur.wake = w; }).catch(() => {});
   });
 
