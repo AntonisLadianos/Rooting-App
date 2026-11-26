@@ -158,10 +158,37 @@
       .replace(/[A-ZΑ-ΩΆ-Ώ]{3,}(?:\s+[A-ZΑ-ΩΆ-Ώ0-9]{2,})*/g, (w) => w.toLowerCase())
       .replace(/\s+/g, ' ').replace(/\s+,/g, ',').trim();
   }
+  // CarPlay/Bluetooth, τρόπος «αθόρυβα»: όσο μιλάει η φωνή (και ~2″ μετά) παίζουμε έναν ήχο που δεν ακούγεται
+  // (θόρυβος -80 dB), ώστε το αυτοκίνητο να μην κλείσει τον ήχο πριν ακουστεί το τέλος της φράσης.
+  function carMode(v) { return v === true || v === 'silent' ? 'silent' : (v === 'repeat' ? 'repeat' : ''); }
+  let actx = null, keepSrc = null, keepUntil = 0;
+  function audioUnlock() { // ΣΥΓΧΡΟΝΑ μέσα σε πάτημα
+    if (carAudio !== 'silent') return;
+    try {
+      const AC = global.AudioContext || global.webkitAudioContext;
+      if (!AC) return;
+      if (!actx) actx = new AC();
+      if (actx.state !== 'running') actx.resume();
+    } catch (e) { /* ignore */ }
+  }
+  function keepAlive(ms) {
+    if (carAudio !== 'silent' || !actx) return;
+    keepUntil = Math.max(keepUntil, Date.now() + ms);
+    try { if (actx.state !== 'running') actx.resume(); } catch (e) { /* ignore */ }
+    if (keepSrc) return;
+    try {
+      const n = actx.sampleRate, buf = actx.createBuffer(1, n, n), d = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = (Math.random() - 0.5) * 2e-4;
+      const src = actx.createBufferSource(); src.buffer = buf; src.loop = true; src.connect(actx.destination); src.start();
+      keepSrc = src;
+      const chk = () => { if (keepSrc !== src) return; if (Date.now() >= keepUntil) { try { src.stop(); } catch (e) { /* ignore */ } keepSrc = null; } else setTimeout(chk, 250); };
+      setTimeout(chk, 250);
+    } catch (e) { keepSrc = null; }
+  }
   // CarPlay/Bluetooth: το αυτοκίνητο έχει καθυστέρηση και κλείνει τον ήχο πριν ακουστεί το τέλος της φράσης.
   // Βάζουμε στο τέλος μια σύντομη επανάληψη (π.χ. «… στην Ικάρου. Δεξιά.») — αν κοπεί, κόβεται αυτή και όχι η οδηγία.
   function carTail(t) {
-    if (!carAudio || !t) return t;
+    if (carAudio !== 'repeat' || !t) return t;
     const ex = t.match(/(πρώτη|δεύτερη|τρίτη|τέταρτη|πέμπτη|έκτη|\d+η) έξοδο/i);
     const dirs = t.match(/(ελαφρώς |απότομα )?(αριστερά|δεξιά)|αναστροφή|ευθεία|ο προορισμός σου|Έφτασες/gi);
     let tail = ex ? ex[1] + ' έξοδος' : (dirs ? dirs[dirs.length - 1] : '');
@@ -182,13 +209,14 @@
         talking = me;
         const t0 = Date.now();
         const done = (why) => { live.delete(u); vl(why + ' ' + ((Date.now() - t0) / 1000).toFixed(1) + '″', text); if (talking !== me) return; talking = null; clearTimeout(guard); setTimeout(pump, 60); };
-        u.onstart = () => vl('αρχή', text);
-        u.onend = () => done('τέλος');
+        u.onstart = () => { vl('αρχή', text); keepAlive(1500 + text.length * 110); };
+        u.onend = () => { keepAlive(2200); done('τέλος'); };
         u.onerror = (e) => done('ΣΦΑΛΜΑ ' + (e && e.error || '?'));
         if (typeof u.onboundary !== 'undefined') { /* ignore */ }
         // αν το iPhone «ξεχάσει» να πει ότι τελείωσε, δεν κολλάμε (χωρίς να κόψουμε τίποτα)
         clearTimeout(guard); guard = setTimeout(() => done('χωρίς τέλος'), 2500 + text.length * 110);
         vl('λέω (φωνή: ' + (voice ? voice.name : 'καμία') + ')', text);
+        keepAlive(1500 + text.length * 110); // ανοίγει τον ήχο του αυτοκινήτου λίγο πριν από τη φωνή
         ss.speak(u);
       } catch (e) { talking = null; continue; }
       return;
@@ -207,7 +235,7 @@
     if (talking && talking.key === key) return false; // λέει ήδη αυτή τη στροφή — δεν τη διακόπτουμε, ούτε την ξαναλέμε
     return enqueue({ text, key, valid });
   }
-  function hush() { vl('σίγαση/κλείσιμο'); queue = []; talking = null; clearTimeout(guard); try { if (global.speechSynthesis) speechSynthesis.cancel(); } catch (e) { /* ignore */ } }
+  function hush() { vl('σίγαση/κλείσιμο'); keepUntil = 0; queue = []; talking = null; clearTimeout(guard); try { if (global.speechSynthesis) speechSynthesis.cancel(); } catch (e) { /* ignore */ } }
   const lc = (t) => t.charAt(0).toLowerCase() + t.slice(1);
   // η οδηγία χωρίς όνομα οδού, π.χ. «Στρίψε δεξιά»
   function shortText(st) {
@@ -220,6 +248,7 @@
   function unlockVoice(text) {
     if (muted || !global.speechSynthesis) return;
     try { if (!voice) pickVoice(); speechSynthesis.resume(); } catch (e) { /* ignore */ }
+    audioUnlock();
     say(text); // αν δεν μιλάει, λέγεται ΣΥΓΧΡΟΝΑ (μέσα στο πάτημα)· αλλιώς μπαίνει στη σειρά
   }
 
@@ -324,7 +353,7 @@
       route: null, hint: 0, stepIdx: 1, spoken: {}, offCount: 0, lastReroute: 0, arrived: false, heading: knownHeading(), watch: null, free: false, freeAt: 0
     });
     el('navRecenter').classList.add('hidden');
-    muted = !!opts.muted; carAudio = !!opts.carAudio;
+    muted = !!opts.muted; carAudio = carMode(opts.carAudio);
     unlockVoice('Ξεκινάμε'); // πρώτο πράγμα, πριν από κάθε await
     document.body.classList.add('navigating');
     if (opts.mv && opts.mv.dimRoute) opts.mv.dimRoute(true); // η γραμμή όλου του δρομολογίου γίνεται αχνή
@@ -575,9 +604,9 @@
     _setLastHeading: (deg) => { lastHead = deg == null ? null : { deg, at: Date.now() }; },
     googleRoute, _buildGoogleRoute: buildGoogleRoute, _decodePolyline: decodePolyline,
     // για δοκιμές
-    setCarAudio: (v) => { carAudio = !!v; },
+    setCarAudio: (v) => { carAudio = carMode(v); audioUnlock(); },
     voiceLog: () => vlog.slice(), clearVoiceLog: () => { vlog = []; try { localStorage.removeItem('rooting.voicelog'); } catch (e) { /* ignore */ } },
-    _speakable: speakable, _carTail: (t) => { const o = carAudio; carAudio = true; const r = carTail(t); carAudio = o; return r; },
+    _speakable: speakable, _carTail: (t) => { const o = carAudio; carAudio = 'repeat'; const r = carTail(t); carAudio = o; return r; },
     _instruction: instruction, _buildRoute: buildRoute, _locate: locate, _fmtDist: fmtDist, _spokenDist: spokenDist
   };
 })(window);
