@@ -132,34 +132,44 @@
     live.add(u); u.onend = u.onerror = () => live.delete(u);
     return u;
   }
-  function say(text, urgent) {
-    if (muted || !global.speechSynthesis) return;
-    try {
+  // ΔΙΚΗ ΜΑΣ ΟΥΡΑ: η εφαρμογή δεν κόβει ΠΟΤΕ φράση στη μέση (cancel() μόνο στο κλείσιμο/σίγαση).
+  // Μιλάει μία φράση τη φορά· η επόμενη περιμένει να τελειώσει η προηγούμενη και, πριν ειπωθεί,
+  // ελέγχεται αν ισχύει ακόμα (π.χ. η στροφή δεν έχει περάσει) — αλλιώς πετιέται.
+  let queue = [], talking = null, guard = null; // talking = { key } της φράσης που λέγεται τώρα
+  function pump() {
+    if (talking || muted || !global.speechSynthesis) return;
+    while (queue.length) {
+      const it = queue.shift();
+      if (it.valid && !it.valid()) continue;
       const ss = speechSynthesis;
-      if (ss.paused) ss.resume();
-      if (urgent && (ss.speaking || ss.pending)) {
-        ss.cancel();
-        setTimeout(() => { try { if (!muted) { ss.resume(); ss.speak(utter(text)); } } catch (e) { /* ignore */ } }, 120);
-        return;
-      }
-      ss.speak(utter(text));
-    } catch (e) { /* χωρίς φωνή */ }
+      try {
+        if (ss.paused) ss.resume();
+        const text = typeof it.text === 'function' ? it.text() : it.text;
+        const u = utter(text), me = { key: it.key };
+        talking = me;
+        const done = () => { live.delete(u); if (talking !== me) return; talking = null; clearTimeout(guard); setTimeout(pump, 60); };
+        u.onend = u.onerror = done;
+        // αν το iPhone «ξεχάσει» να πει ότι τελείωσε, δεν κολλάμε (χωρίς να κόψουμε τίποτα)
+        clearTimeout(guard); guard = setTimeout(done, 2500 + text.length * 110);
+        ss.speak(u);
+      } catch (e) { talking = null; continue; }
+      return;
+    }
   }
-  // Οδηγίες πλοήγησης: ποτέ δεν κόβουμε στη μέση μια φράση για την ΙΔΙΑ στροφή (έκοβε το όνομα της οδού).
-  // Κόβουμε μόνο φράση για στροφή που έχει ήδη περάσει.
-  let talking = null; // κλειδί της οδηγίας που λέγεται τώρα
-  function sayNav(text, key) {
+  function enqueue(it, front) {
     if (muted || !global.speechSynthesis) return false;
-    try {
-      const ss = speechSynthesis;
-      if (ss.paused) ss.resume();
-      const busy = ss.speaking || ss.pending;
-      const go = () => { const u = utter(text); u.onstart = () => { talking = key; }; const end = u.onend; u.onend = u.onerror = () => { end(); if (talking === key) talking = null; }; ss.speak(u); };
-      if (busy && talking === key) return false;
-      if (busy && talking != null && talking < key) { ss.cancel(); talking = null; setTimeout(() => { try { if (!muted) { ss.resume(); go(); } } catch (e) { /* ignore */ } }, 120); return true; }
-      go(); return true;
-    } catch (e) { return false; }
+    // μια νεότερη φράση για την ίδια στροφή αντικαθιστά όποια περιμένει ακόμα στην ουρά
+    if (it.key != null) queue = queue.filter((q) => q.key !== it.key);
+    if (front) queue.unshift(it); else queue.push(it);
+    pump();
+    return true;
   }
+  function say(text, front) { return enqueue({ text }, front); }
+  function sayNav(text, key, valid) {
+    if (talking && talking.key === key) return false; // λέει ήδη αυτή τη στροφή — δεν τη διακόπτουμε, ούτε την ξαναλέμε
+    return enqueue({ text, key, valid });
+  }
+  function hush() { queue = []; talking = null; clearTimeout(guard); try { if (global.speechSynthesis) speechSynthesis.cancel(); } catch (e) { /* ignore */ } }
   const lc = (t) => t.charAt(0).toLowerCase() + t.slice(1);
   // η οδηγία χωρίς όνομα οδού, π.χ. «Στρίψε δεξιά»
   function shortText(st) {
@@ -171,12 +181,8 @@
   // καλείται ΣΥΓΧΡΟΝΑ μέσα στο πάτημα του χρήστη
   function unlockVoice(text) {
     if (muted || !global.speechSynthesis) return;
-    try {
-      const ss = speechSynthesis;
-      if (!voice) pickVoice();
-      ss.resume();
-      ss.speak(utter(text)); // χωρίς cancel() πριν: αν μιλάει ήδη, απλώς μπαίνει στη σειρά
-    } catch (e) { /* ignore */ }
+    try { if (!voice) pickVoice(); speechSynthesis.resume(); } catch (e) { /* ignore */ }
+    say(text); // αν δεν μιλάει, λέγεται ΣΥΓΧΡΟΝΑ (μέσα στο πάτημα)· αλλιώς μπαίνει στη σειρά
   }
 
   // ---------- Κατάσταση πλοήγησης ----------
@@ -304,11 +310,18 @@
     const me = cur;
     if (!me) return;
     me.lastReroute = first ? 0 : Date.now();
-    if (!first) { el('navText').textContent = 'Επανυπολογισμός διαδρομής…'; say('Επανυπολογισμός διαδρομής', true); }
+    if (!first) { el('navText').textContent = 'Επανυπολογισμός διαδρομής…'; if (!talking) say('Επανυπολογισμός διαδρομής'); }
     try {
       const route = await fetchRoute(p, me.dest, me.heading);
       if (cur !== me) return;
-      me.route = route; routeGen++; me.hint = 0; me.stepIdx = 1; me.spoken = {}; me.offCount = 0;
+      const old = me.route, oldSp = me.spoken || {};
+      me.route = route; routeGen++; me.hint = 0; me.stepIdx = 1; me.spoken = {};
+      // ίδια στροφή και στη νέα διαδρομή (π.χ. το GPS «πέταξε» για λίγο): δεν την ξαναλέμε από την αρχή
+      if (old) Object.keys(oldSp).forEach((k) => {
+        const os = old.steps[k]; if (!os) return;
+        const op = old.pts[os.idx];
+        route.steps.forEach((ns, ni) => { if (ns.text === os.text && dist(route.pts[ns.idx], op) < 25) me.spoken[ni] = Object.assign({}, oldSp[k]); });
+      }); me.offCount = 0;
       me.mv.setNavRoute(route.pts.map((x) => [x.lat, x.lng]));
       if (me.onReroute) me.onReroute(route);
       update(p);
@@ -385,18 +398,21 @@
     const chain = !isArr && nx && !nx.silent && gap < Math.max(90, v * 9);
     const then = chain ? (nx.step.maneuver.type === 'arrive' ? ', και αμέσως μετά ο προορισμός σου' : `, και αμέσως μετά ${lc(shortText(nx))}`) : '';
     const markNext = () => { if (chain) { const n = c.spoken[c.stepIdx + 1] || (c.spoken[c.stepIdx + 1] = {}); n.far = n.near = true; } };
+    c.toMan = toMan;
+    const stillValid = () => cur === c && routeGen * 1000 + c.stepIdx === key;
+    const notTooLate = () => stillValid() && c.toMan > 8; // η σύντομη υπενθύμιση δεν λέγεται αφού έχεις ήδη στρίψει
     const fast = v > 13; // > ~47 χλμ/ώρα
     if (!sp.far && !isArr && toMan > NEAR + 120 && toMan > (fast ? 600 : 250) && toMan < (fast ? 1100 : 450)) {
-      if (sayNav(`Σε ${spokenDist(toMan)}, ${lc(st.text)}`, key)) sp.far = true;
+      if (sayNav(`Σε ${spokenDist(toMan)}, ${lc(st.text)}`, key, stillValid)) sp.far = true;
     }
     if (!sp.near && toMan <= NEAR && toMan > NOW) {
       sp.near = sp.far = true; markNext();
-      sayNav(isArr ? `Σε ${spokenDist(toMan)}, ο προορισμός σου` : `Σε ${spokenDist(toMan)}, ${lc(st.text)}${then}`, key);
+      sayNav(() => (isArr ? `Σε ${spokenDist(c.toMan)}, ο προορισμός σου` : `Σε ${spokenDist(c.toMan)}, ${lc(st.text)}${then}`), key, stillValid); // η απόσταση υπολογίζεται τη στιγμή που λέγεται
     }
     if (!sp.now && toMan <= NOW && !isArr) {
       sp.now = sp.near = sp.far = true; markNext();
       // σύντομη φράση (χωρίς όνομα οδού) για να προλαβαίνει· αν λέει ακόμα την ίδια οδηγία, δεν την κόβουμε
-      sayNav(shortText(st) + then, key);
+      sayNav(shortText(st) + then, key, notTooLate);
     }
 
     // άφιξη
@@ -452,7 +468,7 @@
   function arrive() {
     const c = cur;
     c.arrived = true;
-    say('Έφτασες. ' + (c.dest.title ? c.dest.title.split(',')[0] : ''), true);
+    queue = queue.filter((q) => q.key == null); say('Έφτασες. ' + (c.dest.title ? c.dest.title.split(',')[0] : ''), true);
     if (navigator.vibrate) navigator.vibrate([60, 80, 60]);
     el('navText').textContent = 'Έφτασες στον προορισμό';
     el('navArrow').innerHTML = global.ic ? global.ic('flag', 'nav-flag') : '🏁'; el('navDist').textContent = ''; el('navThen').textContent = '';
@@ -495,7 +511,7 @@
     try { if (cur.watch != null) navigator.geolocation.clearWatch(cur.watch); } catch (e) { /* ignore */ }
     try { if (cur.raf) cancelAnimationFrame(cur.raf); } catch (e) { /* ignore */ }
     try { if (cur.wake) cur.wake.release(); } catch (e) { /* ignore */ }
-    try { if (!silent && global.speechSynthesis) speechSynthesis.cancel(); } catch (e) { /* ignore */ } // στο silent (νέα στάση) δεν κόβουμε — βλ. unlockVoice
+    if (!silent) hush(); else queue = []; // στο silent (νέα στάση) δεν κόβουμε ό,τι λέγεται
     if (cur.mv) { cur.mv.setNavRoute(null); cur.mv.unfollow(); if (cur.mv.dimRoute) cur.mv.dimRoute(false); }
     const onExit = cur.onExit;
     cur = null;
@@ -506,7 +522,7 @@
 
   function toggleMute() {
     muted = !muted;
-    if (muted && global.speechSynthesis) speechSynthesis.cancel();
+    if (muted) hush();
     if (!muted) unlockVoice('Φωνή ενεργή');
     el('navMute').innerHTML = global.ic ? global.ic(muted ? 'mute' : 'vol') : (muted ? '🔇' : '🔊');
     return muted;

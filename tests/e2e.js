@@ -187,7 +187,7 @@ function expect(cond, msg) { if (!cond) throw new Error(msg); }
         speak(u) { ss.q.push(u); ss.next(); },
         next() { if (ss.cur || !ss.q.length) return; const u = ss.cur = ss.q.shift(); ss.speaking = true;
           window.__log.push({ said: u.text, at: document.getElementById('navDist').textContent }); if (u.onstart) u.onstart();
-          setTimeout(() => { if (ss.cur !== u) return; ss.cur = null; ss.speaking = false; if (u.onend) u.onend(); ss.next(); }, u.text.length * 15); } };
+          setTimeout(() => { if (ss.cur !== u) return; ss.cur = null; ss.speaking = false; if (u.onend) u.onend(); ss.next(); }, u.text.length * 45); } };
       Object.defineProperty(window, 'speechSynthesis', { configurable: true, get: () => ss });
     });
     await p.click('#btnNavNext'); await p.waitForTimeout(1500);
@@ -196,7 +196,14 @@ function expect(cond, msg) { if (!cond) throw new Error(msg); }
     for (let m = 0; m <= 300; m += 15) path.push([lat0 + dLat(m), lng0]);
     for (let m = 15; m <= 50; m += 15) path.push([lat0 + dLat(300), lng0 + dLng(m)]);
     for (let m = 15; m <= 200; m += 15) path.push([lat0 + dLat(300 + m), lng0 + dLng(50)]);
-    for (const [la, ln] of path) { await p.ctx.setGeolocation({ latitude: la, longitude: ln }); await p.waitForTimeout(450); }
+    for (const [la, ln] of path) {
+      await p.ctx.setGeolocation({ latitude: la, longitude: ln }); await p.waitForTimeout(450);
+      // στα 195 μ (ενώ μιλάει): το GPS «πετάει» 70 μ στο πλάι για λίγο (συμβαίνει ανάμεσα σε κτίρια) → επανυπολογισμός διαδρομής
+      if (Math.abs(la - (lat0 + dLat(195))) < 1e-7) {
+        for (let k = 0; k < 4; k++) { await p.ctx.setGeolocation({ latitude: la, longitude: lng0 + dLng(70) }); await p.waitForTimeout(450); }
+        await p.ctx.setGeolocation({ latitude: la + dLat(5), longitude: ln }); await p.waitForTimeout(200);
+      }
+    }
     await p.waitForTimeout(1500);
     const log = await p.evaluate(() => window.__log);
     const said = log.filter((x) => x.said);
@@ -204,8 +211,7 @@ function expect(cond, msg) { if (!cond) throw new Error(msg); }
     expect(first && /Οδός Άλφα/.test(first.said), 'η πρώτη οδηγία για τη στροφή δεν έχει την οδό: ' + JSON.stringify(said));
     expect(parseInt(first.at, 10) >= 90, 'η οδηγία ειπώθηκε πολύ αργά (στα ' + first.at + ')');
     expect(said.some((x) => /δεξιά.*αμέσως μετά.*αριστερά/.test(x.said)), 'η κοντινή επόμενη στροφή δεν ειπώθηκε μαζί: ' + JSON.stringify(said));
-    const cutAlfa = log.filter((x) => x.cut && /Άλφα|δεξιά/.test(x.cut) && !/Έφτασες/.test(x.cut));
-    expect(!cutAlfa.length, 'κόπηκε στη μέση οδηγία: ' + JSON.stringify(log));
+    expect(!log.some((x) => x.cut), 'κόπηκε φράση στη μέση: ' + JSON.stringify(log));
     return p;
   });
 
