@@ -225,18 +225,25 @@ function expect(cond, msg) { if (!cond) throw new Error(msg); }
       const as = new EventTarget(); as.state = 'active';
       Object.defineProperty(navigator, 'audioSession', { configurable: true, get: () => as });
       window.__call = (on) => { as.state = on ? 'interrupted' : 'active'; as.dispatchEvent(new Event('statechange')); };
+      // AudioContext που μένει «interrupted» μετά την κλήση και περνάει σε «running» μόνο με resume()
+      class FakeAC extends EventTarget { constructor() { super(); this.state = 'running'; window.__ac = this; }
+        resume() { if (navigator.audioSession.state !== 'interrupted') { this.state = 'running'; this.dispatchEvent(new Event('statechange')); return Promise.resolve(); } return Promise.reject(new Error('x')); }
+        createBuffer() { return { getChannelData: () => new Float32Array(10) }; } createBufferSource() { return { connect() {}, start() {}, stop() {} }; } get sampleRate() { return 10; } get destination() { return {}; } }
+      window.AudioContext = FakeAC; window.webkitAudioContext = FakeAC;
+      window.__callAC = () => { window.__ac.state = 'interrupted'; window.__ac.dispatchEvent(new Event('statechange')); };
     });
     await p.click('#btnNavNext'); await p.waitForTimeout(2000);
-    // το audioSession στήθηκε μετά τη φόρτωση: το navigate.js δεν το άκουσε — το δοκιμάζουμε μέσω του ελέγχου στο «visible»
-    await p.evaluate(() => { window.__call(true); document.dispatchEvent(new Event('visibilitychange')); });
+    await p.evaluate(() => { window.__call(true); window.__callAC(); });
     const n0 = await p.evaluate(() => window.__said.length);
     await p.ctx.setGeolocation({ latitude: 35.3360, longitude: 25.1400 }); await p.waitForTimeout(1500);
     await p.ctx.setGeolocation({ latitude: 35.3340, longitude: 25.1370 }); await p.waitForTimeout(1500);
     const inCall = await p.evaluate(() => ({ n: window.__said.length, c: window.__cancels }));
     expect(inCall.n === n0, 'μίλησε μέσα στην κλήση: ' + JSON.stringify(await p.evaluate(() => window.__said.slice(-3))));
     expect(inCall.c >= 1, 'δεν σταμάτησε τη φωνή όταν μπήκε η κλήση');
-    await p.evaluate(() => { window.__call(false); document.dispatchEvent(new Event('visibilitychange')); });
-    await p.waitForTimeout(1800);
+    // όπως στο iPhone: μετά την κλήση ο ήχος μένει «interrupted» ώσπου η σελίδα να τον ξαναζητήσει (resume)
+    await p.evaluate(() => { const as = navigator.audioSession; as.state = 'inactive'; });
+    await p.evaluate(() => { window.__resumed = false; });
+    await p.waitForTimeout(4000); // χωρίς κανένα πάτημα: πρέπει να το καταλάβει μόνο του
     const after = await p.evaluate(() => window.__said.slice(-1)[0] || '');
     expect(/^Σε \d+/.test(after), 'μετά την κλήση δεν είπε την τρέχουσα οδηγία: ' + after);
     return p;

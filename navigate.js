@@ -165,13 +165,25 @@
   // ---------- Τηλεφωνική κλήση: η φωνή σωπαίνει ----------
   // Το iPhone δεν λέει σε μια σελίδα «μιλάει στο τηλέφωνο», αλλά της «κόβει» τον ήχο (κατάσταση interrupted).
   // Όσο κρατάει αυτό, δεν λέμε τίποτα· όταν κλείσεις, λέμε την οδηγία που ισχύει εκείνη τη στιγμή.
-  let inCall = false;
+  let inCall = false, callSrc = null;
   function interrupted() {
     const as = navigator.audioSession;
-    return !!((as && as.state === 'interrupted') || (actx && actx.state === 'interrupted'));
+    const asInt = !!(as && as.state === 'interrupted'), acInt = !!(actx && actx.state === 'interrupted');
+    // η κλήση τελειώνει όταν καθαρίσει το σήμα που την έδειξε· το AudioContext καθαρίζει μόνο με resume() (βλ. retryAudio)
+    if (!inCall) { if (asInt) callSrc = 'as'; else if (acInt) callSrc = 'ac'; return asInt || acInt; }
+    return callSrc === 'as' ? asInt : acInt;
   }
   function checkCall() { if (cur) setCall(interrupted()); }
+  // Μετά την κλήση το iPhone ΔΕΝ ξαναδίνει μόνο του τον ήχο στη σελίδα (μένει «interrupted») — τον ζητάμε
+  // εμείς ξανά κάθε 1,5″ ώσπου να τον πάρουμε. Όσο κρατάει η κλήση, το iPhone απλώς αρνείται.
+  let callPoll = null;
+  function retryAudio() {
+    try { if (actx && actx.state !== 'running' && actx.state !== 'closed') actx.resume().then(checkCall, () => {}); } catch (e) { /* ignore */ }
+    try { if (global.speechSynthesis && speechSynthesis.paused) speechSynthesis.resume(); } catch (e) { /* ignore */ }
+  }
   function setCall(on) {
+    if (on && !callPoll) callPoll = setInterval(() => { if (!cur) { clearInterval(callPoll); callPoll = null; return; } retryAudio(); checkCall(); }, 1500);
+    if (!on && callPoll) { clearInterval(callPoll); callPoll = null; }
     if (on === inCall) return;
     inCall = on;
     if (on) { hush(); return; }
@@ -601,10 +613,12 @@
   function toggleMute() {
     muted = !muted;
     if (muted) hush();
-    if (!muted) unlockVoice(currentLine() || 'Φωνή ενεργή'); // ξαναπατώντας το ηχείο, ακούς πού είσαι
+    if (!muted) { retryAudio(); inCall = false; unlockVoice(currentLine() || 'Φωνή ενεργή'); } // ξαναπατώντας το ηχείο, ακούς πού είσαι
     el('navMute').innerHTML = global.ic ? global.ic(muted ? 'mute' : 'vol') : (muted ? '🔇' : '🔊');
     return muted;
   }
+  // ένα πάτημα στην οθόνη πλοήγησης βοηθάει το iPhone να ξαναδώσει τον ήχο μετά από κλήση
+  document.addEventListener('touchend', () => { if (cur && inCall) { retryAudio(); setTimeout(checkCall, 300); } }, { passive: true });
   document.addEventListener('visibilitychange', () => {
     if (cur && document.visibilityState === 'visible') checkCall(); // γύρισες από την εφαρμογή Τηλέφωνο
     if (cur && document.visibilityState === 'visible' && navigator.wakeLock) navigator.wakeLock.request('screen').then((w) => { if (cur) cur.wake = w; }).catch(() => {});
