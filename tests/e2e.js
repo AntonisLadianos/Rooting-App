@@ -149,6 +149,25 @@ function expect(cond, msg) { if (!cond) throw new Error(msg); }
     return p;
   });
 
+  await test('Φωνή πλοήγησης: μιλάει αμέσως με το πάτημα (ξεκλείδωμα iPhone) και λέει τις στροφές', async () => {
+    const p = await page({ stops: STOPS(), route: ROUTE(['a', 'b', 'c']), settings: settings() });
+    await p.evaluate(() => {
+      window.__said = []; window.__order = [];
+      const ss = { speaking: false, pending: false, paused: false, speak(u) { window.__said.push(u.text); window.__order.push('speak'); }, cancel() {}, resume() {}, getVoices: () => [] };
+      Object.defineProperty(window, 'speechSynthesis', { configurable: true, get: () => ss });
+      // ό,τι γίνεται μετά από await χάνει το «πάτημα»: σημειώνουμε τη σειρά
+      Object.defineProperty(navigator, 'wakeLock', { configurable: true, get: () => ({ request: () => { window.__order.push('await'); return Promise.resolve({ release() {} }); } }) });
+    });
+    await p.click('#btnNavNext'); await p.waitForTimeout(2500);
+    const r = await p.evaluate(() => ({ said: window.__said, order: window.__order }));
+    expect(r.order[0] === 'speak', 'η πρώτη φράση δεν ειπώθηκε πριν από το πρώτο await: ' + JSON.stringify(r.order));
+    // πλησιάζουμε τη στάση: πρέπει να ακουστεί οδηγία / άφιξη
+    await p.ctx.setGeolocation({ latitude: 35.33152, longitude: 25.13382 }); await p.waitForTimeout(2200);
+    const said = await p.evaluate(() => window.__said);
+    expect(said.length >= 2 && said.some((t) => /Έφτασες|Σε |Τώρα/.test(t)), 'δεν ειπώθηκαν οδηγίες: ' + JSON.stringify(said));
+    return p;
+  });
+
   await test('Πλοήγηση: αν περάσεις τη διεύθυνση χωρίς ✓, το ζουμ φεύγει και σε ακολουθεί, και στην επιστροφή ξαναφτάνεις', async () => {
     const p = await page({ stops: STOPS(), route: ROUTE(['a', 'b', 'c']), settings: settings() });
     await p.click('#btnNavNext'); await p.waitForTimeout(2000);

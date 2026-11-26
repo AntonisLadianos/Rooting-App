@@ -122,14 +122,38 @@
     voice = vs.find((v) => /^el/i.test(v.lang) && /melina|μελ/i.test(v.name)) || vs.find((v) => /^el/i.test(v.lang)) || null;
   }
   if (global.speechSynthesis) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+  // iPhone: (1) η φωνή «ξεκλειδώνει» μόνο αν μιλήσει ΑΜΕΣΩΣ μέσα στο πάτημα, πριν από οποιοδήποτε await·
+  // (2) cancel() και αμέσως speak() → το Safari συχνά πετάει σιωπηλά τη νέα φράση· (3) μετά από παύση/κλείδωμα
+  // οθόνης η φωνή μένει «σε παύση» — resume() πριν από κάθε φράση· (4) κρατάμε αναφορά στη φράση ώσπου να τελειώσει.
+  const live = new Set();
+  function utter(text) {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'el-GR'; if (voice) u.voice = voice; u.rate = 1.0; u.volume = 1;
+    live.add(u); u.onend = u.onerror = () => live.delete(u);
+    return u;
+  }
   function say(text, urgent) {
     if (muted || !global.speechSynthesis) return;
     try {
-      if (urgent) speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'el-GR'; if (voice) u.voice = voice; u.rate = 1.0;
-      speechSynthesis.speak(u);
+      const ss = speechSynthesis;
+      if (ss.paused) ss.resume();
+      if (urgent && (ss.speaking || ss.pending)) {
+        ss.cancel();
+        setTimeout(() => { try { if (!muted) { ss.resume(); ss.speak(utter(text)); } } catch (e) { /* ignore */ } }, 120);
+        return;
+      }
+      ss.speak(utter(text));
     } catch (e) { /* χωρίς φωνή */ }
+  }
+  // καλείται ΣΥΓΧΡΟΝΑ μέσα στο πάτημα του χρήστη
+  function unlockVoice(text) {
+    if (muted || !global.speechSynthesis) return;
+    try {
+      const ss = speechSynthesis;
+      if (!voice) pickVoice();
+      ss.resume();
+      ss.speak(utter(text)); // χωρίς cancel() πριν: αν μιλάει ήδη, απλώς μπαίνει στη σειρά
+    } catch (e) { /* ignore */ }
   }
 
   // ---------- Κατάσταση πλοήγησης ----------
@@ -234,6 +258,7 @@
     });
     el('navRecenter').classList.add('hidden');
     muted = !!opts.muted;
+    unlockVoice('Ξεκινάμε'); // πρώτο πράγμα, πριν από κάθε await
     document.body.classList.add('navigating');
     if (opts.mv && opts.mv.dimRoute) opts.mv.dimRoute(true); // η γραμμή όλου του δρομολογίου γίνεται αχνή
     el('nav').classList.remove('hidden');
@@ -243,7 +268,6 @@
     el('navDest').textContent = opts.dest.title || '';
     el('navMute').innerHTML = global.ic ? global.ic(muted ? 'mute' : 'vol') : (muted ? '🔇' : '🔊');
     try { if (navigator.wakeLock) cur.wake = await navigator.wakeLock.request('screen'); } catch (e) { /* ignore */ }
-    say('Ξεκινάμε', true); // «ξεκλειδώνει» τη φωνή στο iPhone (χρειάζεται πάτημα χρήστη)
 
     const here = (await opts.getPos().catch(() => null)) || opts.from;
     if (!here) { el('navText').textContent = 'Δεν βρέθηκε η θέση σου'; return; }
@@ -437,7 +461,7 @@
     try { if (cur.watch != null) navigator.geolocation.clearWatch(cur.watch); } catch (e) { /* ignore */ }
     try { if (cur.raf) cancelAnimationFrame(cur.raf); } catch (e) { /* ignore */ }
     try { if (cur.wake) cur.wake.release(); } catch (e) { /* ignore */ }
-    try { if (global.speechSynthesis) speechSynthesis.cancel(); } catch (e) { /* ignore */ }
+    try { if (!silent && global.speechSynthesis) speechSynthesis.cancel(); } catch (e) { /* ignore */ } // στο silent (νέα στάση) δεν κόβουμε — βλ. unlockVoice
     if (cur.mv) { cur.mv.setNavRoute(null); cur.mv.unfollow(); if (cur.mv.dimRoute) cur.mv.dimRoute(false); }
     const onExit = cur.onExit;
     cur = null;
@@ -449,6 +473,7 @@
   function toggleMute() {
     muted = !muted;
     if (muted && global.speechSynthesis) speechSynthesis.cancel();
+    if (!muted) unlockVoice('Φωνή ενεργή');
     el('navMute').innerHTML = global.ic ? global.ic(muted ? 'mute' : 'vol') : (muted ? '🔇' : '🔊');
     return muted;
   }
