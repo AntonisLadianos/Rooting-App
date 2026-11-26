@@ -160,7 +160,7 @@
   }
   // CarPlay/Bluetooth, τρόπος «αθόρυβα»: όσο μιλάει η φωνή (και ~2″ μετά) παίζουμε έναν ήχο που δεν ακούγεται
   // (θόρυβος -80 dB), ώστε το αυτοκίνητο να μην κλείσει τον ήχο πριν ακουστεί το τέλος της φράσης.
-  function carMode(v) { return v === true || v === 'silent' ? 'silent' : (v === 'repeat' ? 'repeat' : ''); }
+  function carMode(v) { return v ? 'silent' : ''; } // true/'silent' (και το παλιό 'repeat') → αθόρυβη λύση
   let actx = null, keepSrc = null, keepUntil = 0;
   function audioUnlock() { // ΣΥΓΧΡΟΝΑ μέσα σε πάτημα
     if (carAudio !== 'silent') return;
@@ -185,17 +185,6 @@
       setTimeout(chk, 250);
     } catch (e) { keepSrc = null; }
   }
-  // CarPlay/Bluetooth: το αυτοκίνητο έχει καθυστέρηση και κλείνει τον ήχο πριν ακουστεί το τέλος της φράσης.
-  // Βάζουμε στο τέλος μια σύντομη επανάληψη (π.χ. «… στην Ικάρου. Δεξιά.») — αν κοπεί, κόβεται αυτή και όχι η οδηγία.
-  function carTail(t) {
-    if (carAudio !== 'repeat' || !t) return t;
-    const ex = t.match(/(πρώτη|δεύτερη|τρίτη|τέταρτη|πέμπτη|έκτη|\d+η) έξοδο/i);
-    const dirs = t.match(/(ελαφρώς |απότομα )?(αριστερά|δεξιά)|αναστροφή|ευθεία|ο προορισμός σου|Έφτασες/gi);
-    let tail = ex ? ex[1] + ' έξοδος' : (dirs ? dirs[dirs.length - 1] : '');
-    if (!tail) return t; // π.χ. «Ξεκινάμε»: δεν πειράζει αν κοπεί
-    tail = tail.replace(/^ο προορισμός σου$/i, 'Προορισμός');
-    return t.replace(/[\s.,]+$/, '') + '. ' + tail.charAt(0).toUpperCase() + tail.slice(1) + '.';
-  }
   function pump() {
     if (talking || muted || !global.speechSynthesis) return;
     while (queue.length) {
@@ -204,7 +193,7 @@
       const ss = speechSynthesis;
       try {
         if (ss.paused) ss.resume();
-        const text = carTail(speakable(typeof it.text === 'function' ? it.text() : it.text));
+        const text = (speakable(typeof it.text === 'function' ? it.text() : it.text));
         const u = utter(text), me = { key: it.key };
         talking = me;
         const t0 = Date.now();
@@ -606,7 +595,7 @@
     // για δοκιμές
     setCarAudio: (v) => { carAudio = carMode(v); audioUnlock(); },
     voiceLog: () => vlog.slice(), clearVoiceLog: () => { vlog = []; try { localStorage.removeItem('rooting.voicelog'); } catch (e) { /* ignore */ } },
-    _speakable: speakable, _carTail: (t) => { const o = carAudio; carAudio = 'repeat'; const r = carTail(t); carAudio = o; return r; },
+    _speakable: speakable,
     _instruction: instruction, _buildRoute: buildRoute, _locate: locate, _fmtDist: fmtDist, _spokenDist: spokenDist
   };
 })(window);

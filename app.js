@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '92';
+  const APP_VERSION = '93';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -924,7 +924,7 @@
     $('navWho').innerHTML = [who ? `<span class="who">${ic('user')} ${esc(who)}</span>` : '', s.pkgs ? `<b class="pkg-badge${s.pkgs > 1 ? ' multi' : ''}">${ic('package')} ${pkgsText(s.pkgs)}</b>` : ''].filter(Boolean).join('');
     RootingNav.start({
       dest: { lat: s.lat, lng: s.lng, title: title(s), speak: s.label && s.label !== title(s) ? s.label.split(',')[0] : '' }, // ο χάρτης γράφει τη διεύθυνση με πεζά/τόνους — η φωνή τη λέει σωστά
-      from: myPos, mv, osrm: OSRM, muted: !!S.settings.navMuted, flat: !!S.settings.navFlat, carAudio: S.settings.carAudio === true ? 'silent' : (S.settings.carAudio || ''),
+      from: myPos, mv, osrm: OSRM, muted: !!S.settings.navMuted, flat: !!S.settings.navFlat, carAudio: !!S.settings.carAudio,
       getPos: () => getPosition(8000),
       googleKey: () => (routesOn() ? S.settings.googleKey : null),
       onGoogleRoute: countRoutes,
@@ -1949,13 +1949,7 @@
           <option value="waze">Waze</option>
           <option value="inapp">Μέσα στην εφαρμογή (με φωνή)</option>
         </select></label>
-      <label class="field"><span>Φωνή από το αυτοκίνητο (CarPlay/Bluetooth)</span>
-        <select id="sCarAudio">
-          <option value="">Όχι — από το κινητό</option>
-          <option value="silent">Ναι — αθόρυβη λύση</option>
-          <option value="repeat">Ναι — με επανάληψη στο τέλος</option>
-        </select></label>
-      <p class="muted small" style="margin-top:-4px">Το αυτοκίνητο κόβει το τέλος της φράσης. Η «αθόρυβη» κρατάει ανοιχτό τον ήχο του αυτοκινήτου με έναν ήχο που δεν ακούγεται. Αν κόβεται ακόμα, βάλε «με επανάληψη» (π.χ. «… στην Ικάρου. Δεξιά.»).</p>
+      <label class="vision-row" style="margin:4px 0 10px"><input id="sCarAudio" type="checkbox" ${S.settings.carAudio ? 'checked' : ''}> <span><b>Φωνή από το αυτοκίνητο (CarPlay/Bluetooth)</b><br><small class="muted">Το αυτοκίνητο κόβει το τέλος της φράσης. Με αυτό, κρατάει ανοιχτό τον ήχο του αυτοκινήτου με έναν ήχο που δεν ακούγεται, ώστε να ακούς ολόκληρες τις οδηγίες.</small></span></label>
       <label class="vision-row" style="margin:4px 0 12px"><input id="sNavFlat" type="checkbox" ${S.settings.navFlat ? 'checked' : ''}> <span><b>Απλός χάρτης στην πλοήγηση</b><br><small class="muted">Από πάνω, χωρίς κλίση και 3D κτίρια. Λιγότερη μπαταρία και ζέστη. Ισχύει από την επόμενη πλοήγηση.</small></span></label>
       <label class="field"><span>Χρόνος σε κάθε στάση (λεπτά)</span>
         <input id="sSvc" type="number" min="0" max="120" inputmode="numeric" value="${S.settings.serviceMin}"></label>
@@ -2090,8 +2084,7 @@
         };
       }
       b.querySelector('#sNavFlat').onchange = (e) => { S.settings.navFlat = e.target.checked; save(); };
-      { const sel = b.querySelector('#sCarAudio'); sel.value = S.settings.carAudio === true ? 'silent' : (S.settings.carAudio || '');
-        sel.onchange = () => { S.settings.carAudio = sel.value; save(); if (RootingNav.setCarAudio) RootingNav.setCarAudio(sel.value); }; }
+      b.querySelector('#sCarAudio').onchange = (e) => { S.settings.carAudio = e.target.checked; save(); if (RootingNav.setCarAudio) RootingNav.setCarAudio(e.target.checked); };
       const sel = b.querySelector('#sNav');
       sel.value = S.settings.navApp;
       sel.onchange = () => { S.settings.navApp = sel.value; save(); render(); };
