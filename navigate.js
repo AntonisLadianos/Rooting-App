@@ -128,7 +128,8 @@
   const live = new Set();
   function utter(text) {
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'el-GR'; if (voice) u.voice = voice; u.rate = 1.08; u.volume = 1;
+    if (!voice) pickVoice();
+    u.lang = 'el-GR'; if (voice) u.voice = voice; u.rate = 1.0; u.volume = 1; // 1.0: στο iPhone πιο γρήγορα ακούγεται «σπαστά»
     live.add(u); u.onend = u.onerror = () => live.delete(u);
     return u;
   }
@@ -136,21 +137,36 @@
   // Μιλάει μία φράση τη φορά· η επόμενη περιμένει να τελειώσει η προηγούμενη και, πριν ειπωθεί,
   // ελέγχεται αν ισχύει ακόμα (π.χ. η στροφή δεν έχει περάσει) — αλλιώς πετιέται.
   let queue = [], talking = null, guard = null; // talking = { key } της φράσης που λέγεται τώρα
+  // Αρχείο φωνής (για να βρούμε πού κόβεται στο πραγματικό κινητό) — μένει μόνο στο κινητό
+  let vlog = [];
+  try { vlog = JSON.parse(localStorage.getItem('rooting.voicelog') || '[]'); } catch (e) { vlog = []; }
+  let vlogT = null;
+  function vl(ev, text) {
+    const d = new Date();
+    vlog.push({ t: d.toLocaleTimeString('el-GR', { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0').slice(0, 1), ev, text: text ? String(text).slice(0, 90) : '' });
+    if (vlog.length > 150) vlog = vlog.slice(-150);
+    clearTimeout(vlogT); vlogT = setTimeout(() => { try { localStorage.setItem('rooting.voicelog', JSON.stringify(vlog)); } catch (e) { /* ignore */ } }, 500);
+  }
   function pump() {
     if (talking || muted || !global.speechSynthesis) return;
     while (queue.length) {
       const it = queue.shift();
-      if (it.valid && !it.valid()) continue;
+      if (it.valid && !it.valid()) { vl('παράλειψη (πέρασε)', typeof it.text === 'function' ? '' : it.text); continue; }
       const ss = speechSynthesis;
       try {
         if (ss.paused) ss.resume();
         const text = typeof it.text === 'function' ? it.text() : it.text;
         const u = utter(text), me = { key: it.key };
         talking = me;
-        const done = () => { live.delete(u); if (talking !== me) return; talking = null; clearTimeout(guard); setTimeout(pump, 60); };
-        u.onend = u.onerror = done;
+        const t0 = Date.now();
+        const done = (why) => { live.delete(u); vl(why + ' ' + ((Date.now() - t0) / 1000).toFixed(1) + '″', text); if (talking !== me) return; talking = null; clearTimeout(guard); setTimeout(pump, 60); };
+        u.onstart = () => vl('αρχή', text);
+        u.onend = () => done('τέλος');
+        u.onerror = (e) => done('ΣΦΑΛΜΑ ' + (e && e.error || '?'));
+        if (typeof u.onboundary !== 'undefined') { /* ignore */ }
         // αν το iPhone «ξεχάσει» να πει ότι τελείωσε, δεν κολλάμε (χωρίς να κόψουμε τίποτα)
-        clearTimeout(guard); guard = setTimeout(done, 2500 + text.length * 110);
+        clearTimeout(guard); guard = setTimeout(() => done('χωρίς τέλος'), 2500 + text.length * 110);
+        vl('λέω (φωνή: ' + (voice ? voice.name : 'καμία') + ')', text);
         ss.speak(u);
       } catch (e) { talking = null; continue; }
       return;
@@ -169,7 +185,7 @@
     if (talking && talking.key === key) return false; // λέει ήδη αυτή τη στροφή — δεν τη διακόπτουμε, ούτε την ξαναλέμε
     return enqueue({ text, key, valid });
   }
-  function hush() { queue = []; talking = null; clearTimeout(guard); try { if (global.speechSynthesis) speechSynthesis.cancel(); } catch (e) { /* ignore */ } }
+  function hush() { vl('σίγαση/κλείσιμο'); queue = []; talking = null; clearTimeout(guard); try { if (global.speechSynthesis) speechSynthesis.cancel(); } catch (e) { /* ignore */ } }
   const lc = (t) => t.charAt(0).toLowerCase() + t.slice(1);
   // η οδηγία χωρίς όνομα οδού, π.χ. «Στρίψε δεξιά»
   function shortText(st) {
@@ -314,6 +330,7 @@
     try {
       const route = await fetchRoute(p, me.dest, me.heading);
       if (cur !== me) return;
+      if (!first) vl('επανυπολογισμός');
       const old = me.route, oldSp = me.spoken || {};
       me.route = route; routeGen++; me.hint = 0; me.stepIdx = 1; me.spoken = {};
       // ίδια στροφή και στη νέα διαδρομή (π.χ. το GPS «πέταξε» για λίγο): δεν την ξαναλέμε από την αρχή
@@ -536,6 +553,7 @@
     _setLastHeading: (deg) => { lastHead = deg == null ? null : { deg, at: Date.now() }; },
     googleRoute, _buildGoogleRoute: buildGoogleRoute, _decodePolyline: decodePolyline,
     // για δοκιμές
+    voiceLog: () => vlog.slice(), clearVoiceLog: () => { vlog = []; try { localStorage.removeItem('rooting.voicelog'); } catch (e) { /* ignore */ } },
     _instruction: instruction, _buildRoute: buildRoute, _locate: locate, _fmtDist: fmtDist, _spokenDist: spokenDist
   };
 })(window);
