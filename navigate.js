@@ -137,16 +137,7 @@
   // Μιλάει μία φράση τη φορά· η επόμενη περιμένει να τελειώσει η προηγούμενη και, πριν ειπωθεί,
   // ελέγχεται αν ισχύει ακόμα (π.χ. η στροφή δεν έχει περάσει) — αλλιώς πετιέται.
   let queue = [], talking = null, guard = null; // talking = { key } της φράσης που λέγεται τώρα
-  // Αρχείο φωνής (για να βρούμε πού κόβεται στο πραγματικό κινητό) — μένει μόνο στο κινητό
-  let vlog = [];
-  try { vlog = JSON.parse(localStorage.getItem('rooting.voicelog') || '[]'); } catch (e) { vlog = []; }
-  let vlogT = null;
-  function vl(ev, text) {
-    const d = new Date();
-    vlog.push({ t: d.toLocaleTimeString('el-GR', { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0').slice(0, 1), ev, text: text ? String(text).slice(0, 90) : '' });
-    if (vlog.length > 150) vlog = vlog.slice(-150);
-    clearTimeout(vlogT); vlogT = setTimeout(() => { try { localStorage.setItem('rooting.voicelog', JSON.stringify(vlog)); } catch (e) { /* ignore */ } }, 500);
-  }
+  try { localStorage.removeItem('rooting.voicelog'); } catch (e) { /* ignore */ } // παλιό αρχείο φωνής
   // Κείμενο για τη φωνή: οι οδηγίες της Google γράφουν «Στροφή αριστερά στη(ν) …» — η φωνή διάβαζε το «(ν)»
   // κομμένο/σπαστό. Και τα ΚΕΦΑΛΑΙΑ (από τις κάρτες) τα διαβάζει άσχημα.
   function speakable(t) {
@@ -189,22 +180,20 @@
     if (talking || muted || !global.speechSynthesis) return;
     while (queue.length) {
       const it = queue.shift();
-      if (it.valid && !it.valid()) { vl('παράλειψη (πέρασε)', typeof it.text === 'function' ? '' : it.text); continue; }
+      if (it.valid && !it.valid()) continue;
       const ss = speechSynthesis;
       try {
         if (ss.paused) ss.resume();
         const text = (speakable(typeof it.text === 'function' ? it.text() : it.text));
         const u = utter(text), me = { key: it.key };
         talking = me;
-        const t0 = Date.now();
-        const done = (why) => { live.delete(u); vl(why + ' ' + ((Date.now() - t0) / 1000).toFixed(1) + '″', text); if (talking !== me) return; talking = null; clearTimeout(guard); setTimeout(pump, 60); };
-        u.onstart = () => { vl('αρχή', text); keepAlive(1500 + text.length * 110); };
-        u.onend = () => { keepAlive(2200); done('τέλος'); };
-        u.onerror = (e) => done('ΣΦΑΛΜΑ ' + (e && e.error || '?'));
+        const done = () => { live.delete(u); if (talking !== me) return; talking = null; clearTimeout(guard); setTimeout(pump, 60); };
+        u.onstart = () => { keepAlive(1500 + text.length * 110); };
+        u.onend = () => { keepAlive(2200); done(); };
+        u.onerror = done;
         if (typeof u.onboundary !== 'undefined') { /* ignore */ }
         // αν το iPhone «ξεχάσει» να πει ότι τελείωσε, δεν κολλάμε (χωρίς να κόψουμε τίποτα)
-        clearTimeout(guard); guard = setTimeout(() => done('χωρίς τέλος'), 2500 + text.length * 110);
-        vl('λέω (φωνή: ' + (voice ? voice.name : 'καμία') + ')', text);
+        clearTimeout(guard); guard = setTimeout(done, 2500 + text.length * 110);
         keepAlive(1500 + text.length * 110); // ανοίγει τον ήχο του αυτοκινήτου λίγο πριν από τη φωνή
         ss.speak(u);
       } catch (e) { talking = null; continue; }
@@ -224,7 +213,7 @@
     if (talking && talking.key === key) return false; // λέει ήδη αυτή τη στροφή — δεν τη διακόπτουμε, ούτε την ξαναλέμε
     return enqueue({ text, key, valid });
   }
-  function hush() { vl('σίγαση/κλείσιμο'); keepUntil = 0; queue = []; talking = null; clearTimeout(guard); try { if (global.speechSynthesis) speechSynthesis.cancel(); } catch (e) { /* ignore */ } }
+  function hush() { keepUntil = 0; queue = []; talking = null; clearTimeout(guard); try { if (global.speechSynthesis) speechSynthesis.cancel(); } catch (e) { /* ignore */ } }
   const lc = (t) => t.charAt(0).toLowerCase() + t.slice(1);
   // η οδηγία χωρίς όνομα οδού, π.χ. «Στρίψε δεξιά»
   function shortText(st) {
@@ -370,7 +359,6 @@
     try {
       const route = await fetchRoute(p, me.dest, me.heading);
       if (cur !== me) return;
-      if (!first) vl('επανυπολογισμός');
       const old = me.route, oldSp = me.spoken || {};
       me.route = route; routeGen++; me.hint = 0; me.stepIdx = 1; me.spoken = {};
       // ίδια στροφή και στη νέα διαδρομή (π.χ. το GPS «πέταξε» για λίγο): δεν την ξαναλέμε από την αρχή
@@ -594,7 +582,6 @@
     googleRoute, _buildGoogleRoute: buildGoogleRoute, _decodePolyline: decodePolyline,
     // για δοκιμές
     setCarAudio: (v) => { carAudio = carMode(v); audioUnlock(); },
-    voiceLog: () => vlog.slice(), clearVoiceLog: () => { vlog = []; try { localStorage.removeItem('rooting.voicelog'); } catch (e) { /* ignore */ } },
     _speakable: speakable,
     _instruction: instruction, _buildRoute: buildRoute, _locate: locate, _fmtDist: fmtDist, _spokenDist: spokenDist
   };

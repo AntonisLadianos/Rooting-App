@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '93';
+  const APP_VERSION = '94';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -1987,7 +1987,6 @@
         <button class="btn btn-ghost btn-block" id="sMapSave">Εφαρμογή ρυθμίσεων χάρτη</button>
         <p class="muted small">Τώρα: ${mv && mv.kind === 'google' ? 'χάρτης Google' : 'δωρεάν χάρτης'}.</p>` : ''}
       </div>
-      <button class="btn btn-ghost btn-block" id="sVoiceLog">${ic('vol')} Αρχείο φωνής πλοήγησης</button>
       <button class="btn btn-ghost btn-block" id="sExport">${ic('download')} Εξαγωγή στάσεων (κείμενο)</button>
       <div class="card google-card">
         <b>Αντίγραφο ασφαλείας</b>
@@ -2000,16 +1999,6 @@
         <p class="muted small">${S.settings.lastBackup ? 'Τελευταίο αντίγραφο: ' + new Date(S.settings.lastBackup).toLocaleDateString('el-GR') : 'Δεν έχεις κρατήσει ακόμα αντίγραφο.'} Το αρχείο περιέχει το κλειδί σου — μην το στέλνεις σε άλλους.</p>
       </div>
       <p class="muted small">Χάρτες: © OpenStreetMap contributors. Δρομολόγηση: OSRM. Αναζήτηση: ${S.settings.googleKey ? 'Google, ' : ''}Photon / Nominatim.<br>Τα δεδομένα σου αποθηκεύονται μόνο σε αυτό το κινητό.<br>Έκδοση ${APP_VERSION}</p>`, (b) => {
-      b.querySelector('#sVoiceLog').onclick = () => {
-        const L = RootingNav.voiceLog();
-        const txt = L.map((x) => `${x.t}  ${x.ev}${x.text ? ' — ' + x.text : ''}`).join('\n') || '(άδειο — κάνε μια πλοήγηση πρώτα)';
-        openModal('Αρχείο φωνής', `<p class="muted small">Τι είπε η φωνή και πότε (τελευταίες ${L.length} εγγραφές). Κάνε screenshot μετά από μια διαδρομή που κόπηκε.</p>
-          <pre class="voice-log">${esc(txt)}</pre>
-          <button class="btn btn-ghost btn-block" id="vlClear">Καθάρισμα</button>`, (vb) => {
-          const pre = vb.querySelector('.voice-log'); pre.scrollTop = pre.scrollHeight;
-          vb.querySelector('#vlClear').onclick = () => { RootingNav.clearVoiceLog(); closeModal(); toast('Καθαρίστηκε'); };
-        });
-      };
       b.querySelector('#sBackup').onclick = async () => {
         S.settings.lastBackup = Date.now(); save();
         const data = JSON.stringify({ app: 'rooting', v: 1, at: new Date().toISOString(), state: S, geo: geoLoad() });
