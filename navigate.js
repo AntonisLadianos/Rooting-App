@@ -115,7 +115,7 @@
   }
 
   // ---------- Φωνή ----------
-  let voice = null, muted = false;
+  let voice = null, muted = false, routeGen = 0;
   function pickVoice() {
     if (!global.speechSynthesis) return;
     const vs = speechSynthesis.getVoices();
@@ -128,7 +128,7 @@
   const live = new Set();
   function utter(text) {
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'el-GR'; if (voice) u.voice = voice; u.rate = 1.0; u.volume = 1;
+    u.lang = 'el-GR'; if (voice) u.voice = voice; u.rate = 1.08; u.volume = 1;
     live.add(u); u.onend = u.onerror = () => live.delete(u);
     return u;
   }
@@ -145,6 +145,29 @@
       ss.speak(utter(text));
     } catch (e) { /* χωρίς φωνή */ }
   }
+  // Οδηγίες πλοήγησης: ποτέ δεν κόβουμε στη μέση μια φράση για την ΙΔΙΑ στροφή (έκοβε το όνομα της οδού).
+  // Κόβουμε μόνο φράση για στροφή που έχει ήδη περάσει.
+  let talking = null; // κλειδί της οδηγίας που λέγεται τώρα
+  function sayNav(text, key) {
+    if (muted || !global.speechSynthesis) return false;
+    try {
+      const ss = speechSynthesis;
+      if (ss.paused) ss.resume();
+      const busy = ss.speaking || ss.pending;
+      const go = () => { const u = utter(text); u.onstart = () => { talking = key; }; const end = u.onend; u.onend = u.onerror = () => { end(); if (talking === key) talking = null; }; ss.speak(u); };
+      if (busy && talking === key) return false;
+      if (busy && talking != null && talking < key) { ss.cancel(); talking = null; setTimeout(() => { try { if (!muted) { ss.resume(); go(); } } catch (e) { /* ignore */ } }, 120); return true; }
+      go(); return true;
+    } catch (e) { return false; }
+  }
+  const lc = (t) => t.charAt(0).toLowerCase() + t.slice(1);
+  // η οδηγία χωρίς όνομα οδού, π.χ. «Στρίψε δεξιά»
+  function shortText(st) {
+    const m = st.step && st.step.maneuver;
+    if (!m || !m.type) return st.text;
+    return instruction(Object.assign({}, st.step, { name: '', ref: '' }), true).text;
+  }
+
   // καλείται ΣΥΓΧΡΟΝΑ μέσα στο πάτημα του χρήστη
   function unlockVoice(text) {
     if (muted || !global.speechSynthesis) return;
@@ -285,7 +308,7 @@
     try {
       const route = await fetchRoute(p, me.dest, me.heading);
       if (cur !== me) return;
-      me.route = route; me.hint = 0; me.stepIdx = 1; me.spoken = {}; me.offCount = 0;
+      me.route = route; routeGen++; me.hint = 0; me.stepIdx = 1; me.spoken = {}; me.offCount = 0;
       me.mv.setNavRoute(route.pts.map((x) => [x.lat, x.lng]));
       if (me.onReroute) me.onReroute(route);
       update(p);
@@ -349,20 +372,31 @@
     el('navEta').textContent = new Date(Date.now() + remSec * 1000).toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' });
     el('navRemain').textContent = `${Math.max(1, Math.round(remSec / 60))}' · ${fmtDist(remain)}`;
 
-    // φωνητικές οδηγίες: μακριά (μόνο σε μεγάλη ταχύτητα), κοντά, τώρα
-    const key = c.stepIdx;
-    const sp = c.spoken[key] || (c.spoken[key] = st.silent ? { far: true, near: true, now: true } : {});
-    const fast = (c.speed || 0) > 13; // > ~47 χλμ/ώρα
-    if (!sp.far && toMan > (fast ? 600 : 250) && toMan < (fast ? 1100 : 450) && !(st.step.maneuver.type === 'arrive')) {
-      sp.far = true; say(`Σε ${spokenDist(toMan)}, ${st.text.charAt(0).toLowerCase() + st.text.slice(1)}`);
+    // φωνητικές οδηγίες: (μακριά) → «Σε Χ μέτρα, στρίψε … στην …» → λίγο πριν: «Στρίψε δεξιά»
+    // Τα όρια είναι σε ΧΡΟΝΟ (ανάλογα με την ταχύτητα): η φράση θέλει 2–3″ και το GPS αργεί ~1″,
+    // οπότε λέμε την οδηγία νωρίτερα, όχι πάνω στη στροφή.
+    const key = routeGen * 1000 + c.stepIdx;
+    const sp = c.spoken[c.stepIdx] || (c.spoken[c.stepIdx] = st.silent ? { far: true, near: true, now: true } : {});
+    const v = Math.max(c.speed || 0, 6); // m/s — τουλάχιστον ~22 χλμ/ώρα
+    const isArr = st.step.maneuver.type === 'arrive';
+    const NEAR = Math.max(110, v * 13), NOW = Math.max(35, v * 5);
+    // κοντινή επόμενη στροφή (π.χ. δεξιά και αμέσως αριστερά): λέγεται στην ίδια φράση, γιατί μετά δεν προλαβαίνει
+    const gap = nx ? nx.at - st.at : Infinity;
+    const chain = !isArr && nx && !nx.silent && gap < Math.max(90, v * 9);
+    const then = chain ? (nx.step.maneuver.type === 'arrive' ? ', και αμέσως μετά ο προορισμός σου' : `, και αμέσως μετά ${lc(shortText(nx))}`) : '';
+    const markNext = () => { if (chain) { const n = c.spoken[c.stepIdx + 1] || (c.spoken[c.stepIdx + 1] = {}); n.far = n.near = true; } };
+    const fast = v > 13; // > ~47 χλμ/ώρα
+    if (!sp.far && !isArr && toMan > NEAR + 120 && toMan > (fast ? 600 : 250) && toMan < (fast ? 1100 : 450)) {
+      if (sayNav(`Σε ${spokenDist(toMan)}, ${lc(st.text)}`, key)) sp.far = true;
     }
-    if (!sp.near && toMan <= (fast ? 300 : 150) && toMan > 40) {
-      sp.near = true; sp.far = true;
-      say(st.step.maneuver.type === 'arrive' ? `Σε ${spokenDist(toMan)}, ο προορισμός σου` : `Σε ${spokenDist(toMan)}, ${st.text.charAt(0).toLowerCase() + st.text.slice(1)}`);
+    if (!sp.near && toMan <= NEAR && toMan > NOW) {
+      sp.near = sp.far = true; markNext();
+      sayNav(isArr ? `Σε ${spokenDist(toMan)}, ο προορισμός σου` : `Σε ${spokenDist(toMan)}, ${lc(st.text)}${then}`, key);
     }
-    if (!sp.now && toMan <= 40 && st.step.maneuver.type !== 'arrive') {
-      sp.now = sp.near = sp.far = true;
-      say(`Τώρα, ${st.text.charAt(0).toLowerCase() + st.text.slice(1)}` + (nx && nx.at - st.at < 120 && nx.step.maneuver.type !== 'arrive' ? `, και μετά ${nx.text.charAt(0).toLowerCase() + nx.text.slice(1)}` : ''), true);
+    if (!sp.now && toMan <= NOW && !isArr) {
+      sp.now = sp.near = sp.far = true; markNext();
+      // σύντομη φράση (χωρίς όνομα οδού) για να προλαβαίνει· αν λέει ακόμα την ίδια οδηγία, δεν την κόβουμε
+      sayNav(shortText(st) + then, key);
     }
 
     // άφιξη

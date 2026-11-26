@@ -168,6 +168,47 @@ function expect(cond, msg) { if (!cond) throw new Error(msg); }
     return p;
   });
 
+  await test('Φωνή: η οδηγία λέγεται νωρίς, ολόκληρη (με την οδό), και η αμέσως επόμενη στροφή μαζί', async () => {
+    // διαδρομή: 300 μ βόρεια → δεξιά στην Οδό Άλφα → 50 μ → αριστερά στην Οδό Βήτα → 400 μ → προορισμός
+    const lat0 = 35.3387, lng0 = 25.1442, dLat = (m) => m / 111320, dLng = (m) => m / (111320 * Math.cos(lat0 * Math.PI / 180));
+    const P = [[lng0, lat0], [lng0, lat0 + dLat(300)], [lng0 + dLng(50), lat0 + dLat(300)], [lng0 + dLng(50), lat0 + dLat(700)]];
+    const dest = mk('a', P[3][1], P[3][0]);
+    const p = await page({ stops: [dest, mk('b', 35.3246, 25.1227)], route: ROUTE(['a', 'b']), settings: settings() });
+    await p.ctx.route(/project-osrm\.org\/route/, (r) => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ code: 'Ok', routes: [{
+      geometry: { type: 'LineString', coordinates: P }, distance: 750, duration: 94, legs: [{ distance: 750, duration: 94, steps: [
+        { maneuver: { type: 'depart', location: P[0] }, name: 'Αρχική' },
+        { maneuver: { type: 'turn', modifier: 'right', location: P[1] }, name: 'Οδός Άλφα' },
+        { maneuver: { type: 'turn', modifier: 'left', location: P[2] }, name: 'Οδός Βήτα' },
+        { maneuver: { type: 'arrive', location: P[3] }, name: '' }] }] }] }) }));
+    await p.evaluate(() => {
+      window.__log = [];
+      const ss = { speaking: false, pending: false, paused: false, cur: null, q: [], getVoices: () => [], resume() {},
+        cancel() { if (ss.cur) window.__log.push({ cut: ss.cur.text }); ss.q = []; ss.cur = null; ss.speaking = false; },
+        speak(u) { ss.q.push(u); ss.next(); },
+        next() { if (ss.cur || !ss.q.length) return; const u = ss.cur = ss.q.shift(); ss.speaking = true;
+          window.__log.push({ said: u.text, at: document.getElementById('navDist').textContent }); if (u.onstart) u.onstart();
+          setTimeout(() => { if (ss.cur !== u) return; ss.cur = null; ss.speaking = false; if (u.onend) u.onend(); ss.next(); }, u.text.length * 15); } };
+      Object.defineProperty(window, 'speechSynthesis', { configurable: true, get: () => ss });
+    });
+    await p.click('#btnNavNext'); await p.waitForTimeout(1500);
+    // «οδήγηση» ανά 15 μ
+    const path = [];
+    for (let m = 0; m <= 300; m += 15) path.push([lat0 + dLat(m), lng0]);
+    for (let m = 15; m <= 50; m += 15) path.push([lat0 + dLat(300), lng0 + dLng(m)]);
+    for (let m = 15; m <= 200; m += 15) path.push([lat0 + dLat(300 + m), lng0 + dLng(50)]);
+    for (const [la, ln] of path) { await p.ctx.setGeolocation({ latitude: la, longitude: ln }); await p.waitForTimeout(450); }
+    await p.waitForTimeout(1500);
+    const log = await p.evaluate(() => window.__log);
+    const said = log.filter((x) => x.said);
+    const first = said.find((x) => /δεξιά/.test(x.said));
+    expect(first && /Οδός Άλφα/.test(first.said), 'η πρώτη οδηγία για τη στροφή δεν έχει την οδό: ' + JSON.stringify(said));
+    expect(parseInt(first.at, 10) >= 90, 'η οδηγία ειπώθηκε πολύ αργά (στα ' + first.at + ')');
+    expect(said.some((x) => /δεξιά.*αμέσως μετά.*αριστερά/.test(x.said)), 'η κοντινή επόμενη στροφή δεν ειπώθηκε μαζί: ' + JSON.stringify(said));
+    const cutAlfa = log.filter((x) => x.cut && /Άλφα|δεξιά/.test(x.cut) && !/Έφτασες/.test(x.cut));
+    expect(!cutAlfa.length, 'κόπηκε στη μέση οδηγία: ' + JSON.stringify(log));
+    return p;
+  });
+
   await test('Πλοήγηση: αν περάσεις τη διεύθυνση χωρίς ✓, το ζουμ φεύγει και σε ακολουθεί, και στην επιστροφή ξαναφτάνεις', async () => {
     const p = await page({ stops: STOPS(), route: ROUTE(['a', 'b', 'c']), settings: settings() });
     await p.click('#btnNavNext'); await p.waitForTimeout(2000);
