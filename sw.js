@@ -2,10 +2,10 @@
 // (η αναζήτηση/δρομολόγηση θέλουν internet).
 //  • CACHE  : τα αρχεία της εφαρμογής — αλλάζει όνομα σε κάθε έκδοση
 //  • VENDOR : μεγάλα αρχεία που δεν αλλάζουν (ανάγνωση screenshots ~12 MB, χάρτης) — ΔΕΝ σβήνεται στις ενημερώσεις
-const CACHE = 'rooting-v96';
+const CACHE = 'rooting-v97';
 const VENDOR = 'rooting-vendor-1';
 const SHELL = [
-  './', 'index.html', 'style.css', 'app.js', 'solver.js', 'ocr.js', 'geo.js', 'mapview.js', 'navigate.js', 'icons.js', 'manifest.webmanifest',
+  './', 'index.html', 'style.css', 'app.js', 'solver.js', 'ocr.js', 'video.js', 'geo.js', 'mapview.js', 'navigate.js', 'icons.js', 'manifest.webmanifest',
   'icons/icon-180.png', 'icons/icon-192.png'
 ];
 self.addEventListener('install', (e) => {

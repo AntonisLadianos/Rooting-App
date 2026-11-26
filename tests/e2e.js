@@ -249,6 +249,43 @@ function expect(cond, msg) { if (!cond) throw new Error(msg); }
     return p;
   });
 
+  await test('Βίντεο εγγραφής οθόνης: γίνεται καθαρά καρέ που καλύπτουν όλη τη λίστα και διαβάζονται σαν screenshots', async () => {
+    const p = await page({ stops: [], route: null, settings: settings() });
+    const r = await p.evaluate(async () => {
+      // εικονικό βίντεο: λίστα 24 καρτών που κυλάει με παύσεις
+      const W = 390, Hs = 844, TOPB = 120, BOTB = 84, CARD = 170, N = 24, view = Hs - TOPB - BOTB, maxOff = N * CARD - view;
+      const c = document.createElement('canvas'); c.width = W; c.height = Hs; const x = c.getContext('2d');
+      const plan = [[0.8, 0], [1.5, 400], [0.5, 0], [1, 900], [0.5, 0], [3, 450], [1, 0]];
+      const offAt = (t) => { let o = 0, tt = 0; for (const [d, v] of plan) { o = Math.min(maxOff, o + v * Math.min(d, Math.max(0, t - tt))); tt += d; } return o; };
+      const total = plan.reduce((s2, a2) => s2 + a2[0], 0);
+      const draw = (off) => {
+        x.fillStyle = '#f2f2f2'; x.fillRect(0, 0, W, Hs);
+        for (let i = 0; i < N; i++) { const y = TOPB + i * CARD - off; if (y > Hs || y + CARD < 0) continue;
+          x.fillStyle = '#fff'; x.fillRect(12, y + 8, W - 24, CARD - 16); x.fillStyle = `hsl(${(i * 47) % 360},60%,45%)`; x.fillRect(24, y + 20, 40, 40);
+          x.fillStyle = '#111'; x.font = 'bold 22px sans-serif'; x.fillText('Κάρτα ' + (i + 1) + ' Οδός ' + (i * 7 % 50), 76, y + 48);
+          x.font = '16px sans-serif'; x.fillText('Πελάτης ' + i + ' · 69' + (10000000 + i * 1234567 % 9999999), 24, y + 90); }
+        x.fillStyle = '#1e40af'; x.fillRect(0, 0, W, TOPB); x.fillStyle = '#ddd'; x.fillRect(0, Hs - BOTB, W, BOTB);
+      };
+      const rec = new MediaRecorder(c.captureStream(30), { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 4e6 });
+      const chunks = []; rec.ondataavailable = (e) => chunks.push(e.data);
+      const t0 = performance.now(); draw(0); rec.start();
+      await new Promise((res) => { const tick = () => { const t = (performance.now() - t0) / 1000; draw(offAt(t)); if (t < total) requestAnimationFrame(tick); else res(); }; tick(); });
+      rec.stop(); await new Promise((res) => (rec.onstop = res));
+      const file = new File([new Blob(chunks, { type: 'video/webm' })], 'ScreenRecording.webm', { type: 'video/webm' });
+      // η ανάγνωση κειμένου εδώ είναι ψεύτικη: μετράμε τι εικόνες της δίνονται
+      window.__frames = [];
+      RootingOCR.recognize = async (f) => { window.__frames.push({ type: f.type, size: f.size }); return { text: '', ambig: [] }; };
+      const dt = new DataTransfer(); dt.items.add(file);
+      const inp = document.getElementById('shotInput'); inp.files = dt.files; inp.dispatchEvent(new Event('change'));
+      return true;
+    });
+    await p.waitForFunction(() => document.getElementById('modalTitle') && /Δεν βρέθηκαν/.test(document.getElementById('modalTitle').textContent), null, { timeout: 90000 });
+    const fr = await p.evaluate(() => window.__frames);
+    expect(fr.length >= 6 && fr.length <= 30, 'λάθος πλήθος καρέ: ' + fr.length);
+    expect(fr.every((f) => f.type === 'image/jpeg' && f.size > 5000), 'τα καρέ δεν είναι εικόνες: ' + JSON.stringify(fr.slice(0, 3)));
+    return p;
+  });
+
   await test('Πλοήγηση: αν περάσεις τη διεύθυνση χωρίς ✓, το ζουμ φεύγει και σε ακολουθεί, και στην επιστροφή ξαναφτάνεις', async () => {
     const p = await page({ stops: STOPS(), route: ROUTE(['a', 'b', 'c']), settings: settings() });
     await p.click('#btnNavNext'); await p.waitForTimeout(2000);

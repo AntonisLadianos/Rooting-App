@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '96';
+  const APP_VERSION = '97';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -1666,8 +1666,28 @@
   // ---------- Διευθύνσεις από screenshot ----------
   $('btnShot').onclick = () => { $('shotInput').value = ''; $('shotInput').click(); };
   $('shotInput').addEventListener('change', async (e) => {
-    const files = Array.from(e.target.files || []);
+    let files = Array.from(e.target.files || []);
     if (!files.length) return;
+    // Βίντεο (εγγραφή οθόνης): γίνεται λίγα καθαρά καρέ, που διαβάζονται όπως τα screenshots
+    let videoGaps = 0, fromVideo = 0;
+    const isVideo = (f) => /^video\//.test(f.type) || /\.(mov|mp4|m4v|webm)$/i.test(f.name || '');
+    if (files.some(isVideo)) {
+      const out = [];
+      try {
+        for (const f of files) {
+          if (!isVideo(f)) { out.push(f); continue; }
+          busy(true, 'Κοιτάζω το βίντεο…');
+          const r = await RootingVideo.extractFrames(f, (p) => busy(true, `Κοιτάζω το βίντεο… ${Math.round(p * 100)}%`));
+          out.push(...r.files); videoGaps += r.gaps; fromVideo += r.files.length;
+        }
+      } catch (err) {
+        console.error(err); busy(false);
+        toast('Δεν ήταν δυνατή η ανάγνωση του βίντεο: ' + err.message);
+        return;
+      }
+      files = out;
+      if (!files.length) { busy(false); toast('Δεν βρέθηκαν καρέ στο βίντεο'); return; }
+    }
     const found = [], perImage = [], allAmbig = [];
     try {
       // 2 screenshots ταυτόχρονα (όταν είναι 3+), η σειρά διατηρείται για την ένωση κομμένων καρτελών
@@ -1694,6 +1714,7 @@
       await Promise.all(Array.from({ length: lanes }, (_, k) => lane(k)));
       results.forEach(({ text, ambig }) => { perImage.push(RootingOCR.extractImage(text)); allAmbig.push(...ambig); });
       if (visionFail) toast('Η ανάγνωση Google δεν δούλεψε (' + String(visionFail).slice(0, 80) + ') — διάβασα στο κινητό');
+      if (videoGaps) toast(`Σε ${videoGaps === 1 ? 'ένα σημείο' : videoGaps + ' σημεία'} το βίντεο κύλησε πολύ γρήγορα — έλεγξε τη μέτρηση καρτών (ή ξαναγράψε πιο αργά)`);
     } catch (err) {
       console.error(err);
       busy(false);
