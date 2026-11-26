@@ -115,7 +115,7 @@
   }
 
   // ---------- Φωνή ----------
-  let voice = null, muted = false, routeGen = 0;
+  let voice = null, muted = false, routeGen = 0, carAudio = false;
   function pickVoice() {
     if (!global.speechSynthesis) return;
     const vs = speechSynthesis.getVoices();
@@ -158,6 +158,17 @@
       .replace(/[A-ZΑ-ΩΆ-Ώ]{3,}(?:\s+[A-ZΑ-ΩΆ-Ώ0-9]{2,})*/g, (w) => w.toLowerCase())
       .replace(/\s+/g, ' ').replace(/\s+,/g, ',').trim();
   }
+  // CarPlay/Bluetooth: το αυτοκίνητο έχει καθυστέρηση και κλείνει τον ήχο πριν ακουστεί το τέλος της φράσης.
+  // Βάζουμε στο τέλος μια σύντομη επανάληψη (π.χ. «… στην Ικάρου. Δεξιά.») — αν κοπεί, κόβεται αυτή και όχι η οδηγία.
+  function carTail(t) {
+    if (!carAudio || !t) return t;
+    const ex = t.match(/(πρώτη|δεύτερη|τρίτη|τέταρτη|πέμπτη|έκτη|\d+η) έξοδο/i);
+    const dirs = t.match(/(ελαφρώς |απότομα )?(αριστερά|δεξιά)|αναστροφή|ευθεία|ο προορισμός σου|Έφτασες/gi);
+    let tail = ex ? ex[1] + ' έξοδος' : (dirs ? dirs[dirs.length - 1] : '');
+    if (!tail) return t; // π.χ. «Ξεκινάμε»: δεν πειράζει αν κοπεί
+    tail = tail.replace(/^ο προορισμός σου$/i, 'Προορισμός');
+    return t.replace(/[\s.,]+$/, '') + '. ' + tail.charAt(0).toUpperCase() + tail.slice(1) + '.';
+  }
   function pump() {
     if (talking || muted || !global.speechSynthesis) return;
     while (queue.length) {
@@ -166,7 +177,7 @@
       const ss = speechSynthesis;
       try {
         if (ss.paused) ss.resume();
-        const text = speakable(typeof it.text === 'function' ? it.text() : it.text);
+        const text = carTail(speakable(typeof it.text === 'function' ? it.text() : it.text));
         const u = utter(text), me = { key: it.key };
         talking = me;
         const t0 = Date.now();
@@ -313,7 +324,7 @@
       route: null, hint: 0, stepIdx: 1, spoken: {}, offCount: 0, lastReroute: 0, arrived: false, heading: knownHeading(), watch: null, free: false, freeAt: 0
     });
     el('navRecenter').classList.add('hidden');
-    muted = !!opts.muted;
+    muted = !!opts.muted; carAudio = !!opts.carAudio;
     unlockVoice('Ξεκινάμε'); // πρώτο πράγμα, πριν από κάθε await
     document.body.classList.add('navigating');
     if (opts.mv && opts.mv.dimRoute) opts.mv.dimRoute(true); // η γραμμή όλου του δρομολογίου γίνεται αχνή
@@ -564,8 +575,9 @@
     _setLastHeading: (deg) => { lastHead = deg == null ? null : { deg, at: Date.now() }; },
     googleRoute, _buildGoogleRoute: buildGoogleRoute, _decodePolyline: decodePolyline,
     // για δοκιμές
+    setCarAudio: (v) => { carAudio = !!v; },
     voiceLog: () => vlog.slice(), clearVoiceLog: () => { vlog = []; try { localStorage.removeItem('rooting.voicelog'); } catch (e) { /* ignore */ } },
-    _speakable: speakable,
+    _speakable: speakable, _carTail: (t) => { const o = carAudio; carAudio = true; const r = carTail(t); carAudio = o; return r; },
     _instruction: instruction, _buildRoute: buildRoute, _locate: locate, _fmtDist: fmtDist, _spokenDist: spokenDist
   };
 })(window);
