@@ -91,7 +91,7 @@
       if ((t === 'exit roundabout' || t === 'exit rotary') && prev && /roundabout|rotary/.test(prev.step.maneuver.type)) return;
       if ((t === 'new name' || t === 'continue') && mod === 'straight' && prev && (st.name || '') === (prev.step.name || '')) return;
       const silent = (t === 'new name' || t === 'continue') && mod === 'straight'; // εμφανίζεται, αλλά δεν λέγεται
-      steps.push({ step: st, idx: best, at: cum[best], leg: li, silent, ...instruction(st, li === osrmRoute.legs.length - 1) });
+      steps.push({ step: st, idx: best, at: cum[best], leg: li, silent, road: st.name || st.ref || '', ...instruction(st, li === osrmRoute.legs.length - 1) });
     }));
     return { pts, cum, steps, total: cum[cum.length - 1], duration: osrmRoute.duration };
   }
@@ -204,7 +204,7 @@
     if (!c || !c.route || c.arrived || c.toMan == null) return '';
     const st = c.route.steps[c.stepIdx];
     if (!st) return '';
-    return st.step.maneuver.type === 'arrive' ? `Σε ${spokenDist(c.toMan)}, ο προορισμός σου` : `Σε ${spokenDist(c.toMan)}, ${lc(st.text)}`;
+    return st.step.maneuver.type === 'arrive' ? `Σε ${spokenDist(c.toMan)}, ο προορισμός σου${c.route.side ? ', στα ' + c.route.side : ''}` : `Σε ${spokenDist(c.toMan)}, ${lc(st.text)}`;
   }
   function keepAlive(ms) {
     if (carAudio !== 'silent' || !actx) return;
@@ -302,6 +302,36 @@
     RAMP_LEFT: 'slight left', RAMP_RIGHT: 'slight right', FORK_LEFT: 'slight left', FORK_RIGHT: 'slight right',
     STRAIGHT: 'straight', MERGE: 'straight', NAME_CHANGE: 'straight', DEPART: 'straight'
   };
+  // Οι οδηγίες της Google: «Στροφή αριστερά στη(ν) Λεωφ. …» → «Στρίψε αριστερά στην Λεωφ. …»
+  function tidyInstr(t) {
+    return String(t || '')
+      .replace(/([A-Za-zΑ-Ωα-ωά-ώΆ-Ώϊϋΐΰ]+)\(([A-Za-zα-ωά-ώ]{1,3})\)/g, '$1$2')
+      .replace(/^Στροφή (?=αριστερά|δεξιά|ελαφρώς|απότομα)/, 'Στρίψε ')
+      .replace(/\s+/g, ' ').trim();
+  }
+  // ο δρόμος που μπαίνεις με αυτή την κίνηση («… στην Ικάρου» → «Ικάρου»)
+  function roadOf(t) {
+    const m = String(t || '').match(/\s(?:στην|στη|στον|στο|στις|στους|προς την|προς τη|προς)\s+(.+)$/);
+    if (!m) return '';
+    return m[1].replace(/\s+προς\s.*$/, '').replace(/[.,;]+$/, '').replace(/\s*\/.*$/, '').trim().slice(0, 40);
+  }
+  // Σε ποια πλευρά του δρόμου είναι η στάση: η διαδρομή τελειώνει πάνω στον δρόμο, η στάση (το κτίριο) είναι δίπλα
+  function sideOf(route, dest) {
+    const pts = route.pts, n = pts.length - 1;
+    if (n < 1 || !dest) return '';
+    const b = pts[n];
+    let k = n - 1;
+    while (k > 0 && dist(pts[k], b) < 8) k--;
+    const a = pts[k];
+    const kx = Math.cos(b.lat * rad) * R * rad, ky = R * rad;
+    const ux = (b.lng - a.lng) * kx, uy = (b.lat - a.lat) * ky, L = Math.hypot(ux, uy);
+    if (L < 3) return '';
+    const vx = (dest.lng - b.lng) * kx, vy = (dest.lat - b.lat) * ky;
+    const perp = (ux * vy - uy * vx) / L, along = (ux * vx + uy * vy) / L;
+    if (Math.abs(perp) < 4 || Math.abs(perp) < Math.abs(along) * 0.5) return ''; // στο τέλος του δρόμου / αβέβαιο
+    return perp > 0 ? 'αριστερά' : 'δεξιά';
+  }
+
   // Απάντηση Google -> ίδια μορφή με το buildRoute (pts, cum, steps[{at, text, arrow, step, silent}], total, duration)
   function buildGoogleRoute(gr) {
     const pts = decodePolyline(gr.polyline.encodedPolyline);
@@ -313,17 +343,17 @@
     (gr.legs || []).forEach((leg) => (leg.steps || []).forEach((st) => {
       const ni = st.navigationInstruction || {};
       const man = ni.maneuver || (steps.length ? '' : 'DEPART');
-      const txt = String(ni.instructions || '').split('\n')[0].trim();
+      const txt = tidyInstr(String(ni.instructions || '').split('\n')[0].trim());
       const sp = st.polyline && st.polyline.encodedPolyline ? decodePolyline(st.polyline.encodedPolyline) : [];
       let best = from, bd = Infinity;
       if (sp.length) for (let i = from; i < pts.length; i++) { const d = dist(sp[0], pts[i]); if (d < bd) { bd = d; best = i; } if (bd < 3 && d > 200) break; }
       from = best;
-      if (!steps.length) { steps.push({ step: { maneuver: { type: 'depart' }, name: '' }, idx: 0, at: 0, leg: 0, silent: true, text: txt || 'Ξεκίνα', arrow: '↑' }); return; }
+      if (!steps.length) { steps.push({ step: { maneuver: { type: 'depart' }, name: '' }, idx: 0, at: 0, leg: 0, silent: true, text: txt || 'Ξεκίνα', arrow: '↑', road: roadOf(txt) }); return; }
       if (!txt && !man) return; // τμήμα χωρίς οδηγία
       const round = /ROUNDABOUT/.test(man);
       const mod = G_MOD[man] || 'straight';
       steps.push({ step: { maneuver: { type: round ? 'roundabout' : 'turn', modifier: mod }, name: '' }, idx: best, at: cum[best], leg: 0,
-        silent: man === 'NAME_CHANGE' || man === 'STRAIGHT', text: txt || instruction({ maneuver: { type: 'turn', modifier: mod } }).text, arrow: round ? '⟳' : (ARROW[mod] || '↑') });
+        silent: man === 'NAME_CHANGE' || man === 'STRAIGHT', text: txt || instruction({ maneuver: { type: 'turn', modifier: mod } }).text, arrow: round ? '⟳' : (ARROW[mod] || '↑'), road: roadOf(txt) });
     }));
     if (!steps.length) steps.push({ step: { maneuver: { type: 'depart' }, name: '' }, idx: 0, at: 0, leg: 0, silent: true, text: 'Ξεκίνα', arrow: '↑' });
     const last = pts.length - 1;
@@ -405,6 +435,7 @@
       const route = await fetchRoute(p, me.dest, me.heading);
       if (cur !== me) return;
       const old = me.route, oldSp = me.spoken || {};
+      route.side = sideOf(route, me.dest);
       me.route = route; routeGen++; me.hint = 0; me.stepIdx = 1; me.spoken = {};
       // ίδια στροφή και στη νέα διαδρομή (π.χ. το GPS «πέταξε» για λίγο): δεν την ξαναλέμε από την αρχή
       if (old) Object.keys(oldSp).forEach((k) => {
@@ -479,7 +510,11 @@
     const remain = Math.max(0, r.total - loc.along);
     if (st.step.maneuver.type === 'arrive' && global.ic) el('navArrow').innerHTML = global.ic('flag', 'nav-flag'); else el('navArrow').textContent = st.arrow;
     el('navDist').textContent = fmtDist(toMan);
-    el('navText').textContent = st.text;
+    el('navText').textContent = st.step.maneuver.type === 'arrive' ? (r.side ? `Ο προορισμός σου, στα ${r.side}` : 'Ο προορισμός σου') : st.text;
+    // ο δρόμος που βρίσκεσαι τώρα (από την τελευταία κίνηση που έκανες)
+    const road = (r.steps[c.stepIdx - 1] && r.steps[c.stepIdx - 1].road) || '';
+    const rd = el('navRoad');
+    if (rd) { rd.textContent = road; rd.classList.toggle('hidden', !road); }
     el('navThen').textContent = nx && nx.step.maneuver.type !== 'arrive' && nx.at - st.at < 400 ? `Μετά: ${nx.arrow} ${nx.text}` : '';
     const remSec = r.duration * (remain / Math.max(1, r.total));
     el('navEta').textContent = new Date(Date.now() + remSec * 1000).toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' });
@@ -507,7 +542,7 @@
     }
     if (!sp.near && toMan <= NEAR && toMan > NOW) {
       sp.near = sp.far = true; markNext();
-      sayNav(() => (isArr ? `Σε ${spokenDist(c.toMan)}, ο προορισμός σου` : `Σε ${spokenDist(c.toMan)}, ${lc(st.text)}${then}`), key, stillValid); // η απόσταση υπολογίζεται τη στιγμή που λέγεται
+      sayNav(() => (isArr ? `Σε ${spokenDist(c.toMan)}, ο προορισμός σου${r.side ? ', στα ' + r.side : ''}` : `Σε ${spokenDist(c.toMan)}, ${lc(st.text)}${then}`), key, stillValid); // η απόσταση υπολογίζεται τη στιγμή που λέγεται
     }
     if (!sp.now && toMan <= NOW && !isArr) {
       sp.now = sp.near = sp.far = true; markNext();
@@ -570,9 +605,11 @@
   function arrive() {
     const c = cur;
     c.arrived = true; c.minD = null; c.awayN = 0;
-    queue = queue.filter((q) => q.key == null); say('Έφτασες. ' + (c.dest.speak || (c.dest.title ? c.dest.title.split(',')[0] : '')), true);
+    queue = queue.filter((q) => q.key == null); const side = c.route && c.route.side;
+    say('Έφτασες. ' + (c.dest.speak || (c.dest.title ? c.dest.title.split(',')[0] : '')) + (side ? ', στα ' + side : '') + '.' + (c.arriveSay ? ' ' + c.arriveSay : ''), true);
     if (navigator.vibrate) navigator.vibrate([60, 80, 60]);
-    el('navText').textContent = 'Έφτασες στον προορισμό';
+    el('navText').textContent = 'Έφτασες στον προορισμό' + (side ? ` · στα ${side}` : '');
+    if (el('navRoad')) el('navRoad').classList.add('hidden');
     el('navArrow').innerHTML = global.ic ? global.ic('flag', 'nav-flag') : '🏁'; el('navDist').textContent = ''; el('navThen').textContent = '';
     if (!c.free) focusDest();
     if (c.onArrive) c.onArrive();

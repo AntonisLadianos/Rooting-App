@@ -308,6 +308,20 @@ function expect(cond, msg) { if (!cond) throw new Error(msg); }
     return p;
   });
 
+  await test('Πλοήγηση: πλευρά του δρόμου, όνομα δρόμου και «η επόμενη είναι πολύ κοντά»', async () => {
+    // στάση b μόλις 60 μ από την a
+    const st = [mk('a', 35.3315, 25.1338), mk('b', 35.33195, 25.13405), mk('c', 35.3350, 25.1150)];
+    const p = await page({ stops: st, route: ROUTE(['a', 'b', 'c']), settings: settings() });
+    await p.click('#btnNavNext'); await p.waitForTimeout(2000);
+    const near = await p.textContent('#navNear');
+    expect(/πολύ κοντά/.test(near) && /Στάση b/.test(near) && !(await p.$eval('#navNear', (e) => e.classList.contains('hidden'))), 'δεν φαίνεται ότι η επόμενη είναι κοντά: ' + near);
+    expect(!/Στάση c/.test(near), 'έβαλε και μακρινή στάση στις «κοντά»');
+    // όνομα δρόμου: η διαδρομή (ψεύτικη) ξεκινά στη «Δοκιμαστική» → μετά τη στροφή «Φανταστική»
+    const road = await p.evaluate(() => { const e = document.getElementById('navRoad'); return e.classList.contains('hidden') ? '' : e.textContent; });
+    expect(/Δοκιμαστική|Φανταστική/.test(road), 'δεν φαίνεται ο δρόμος: «' + road + '»');
+    return p;
+  });
+
   await test('Πλοήγηση: μετά το ✓ η νέα διαδρομή ζητιέται με την κατεύθυνση που κοιτάει το αυτοκίνητο', async () => {
     const p = await page({ stops: STOPS(), route: ROUTE(['a', 'b', 'c']), settings: settings() });
     const urls = [];

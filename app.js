@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '101';
+  const APP_VERSION = '102';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -922,7 +922,17 @@
     // πελάτης(ες) και δέματα κάτω από τη διεύθυνση
     const who = (s.people || []).map((p) => p.name).filter(Boolean).join(' · ') || s.note || '';
     $('navWho').innerHTML = [who ? `<span class="who">${ic('user')} ${esc(who)}</span>` : '', s.pkgs ? `<b class="pkg-badge${s.pkgs > 1 ? ' multi' : ''}">${ic('package')} ${pkgsText(s.pkgs)}</b>` : ''].filter(Boolean).join('');
+    // επόμενες στάσεις πολύ κοντά σε αυτήν: «παρκάρεις μία φορά»
+    const near = [];
+    { const rest = orderedStops().filter((x) => !x.done && x.id !== s.id);
+      for (const x of rest) { const d = haversine(s, x); if (d > 100 || near.length >= 3) break; near.push({ x, d }); } }
+    const nearName = (x) => (x.orig || x.label || '').split(',')[0];
+    $('navNear').innerHTML = near.length ? `${ic('pin')} ${near.length === 1 ? 'Η επόμενη στάση' : `Οι επόμενες ${near.length} στάσεις`} είναι πολύ κοντά — παρκάρεις μία φορά: ` +
+      near.map(({ x, d }) => `<b>${esc(nearName(x))}</b> (~${Math.max(10, Math.round(d / 10) * 10)} μ${x.pkgs ? ' · ' + pkgsText(x.pkgs) : ''})`).join(' · ') : '';
+    $('navNear').classList.toggle('hidden', !near.length);
+    const arriveSay = near.length ? (near.length === 1 ? `Η επόμενη στάση είναι μόλις ${Math.max(10, Math.round(near[0].d / 10) * 10)} μέτρα από εδώ.` : `Οι επόμενες ${near.length} στάσεις είναι πολύ κοντά.`) : '';
     RootingNav.start({
+      arriveSay,
       dest: { lat: s.lat, lng: s.lng, title: title(s), speak: s.label && s.label !== title(s) ? s.label.split(',')[0] : '' }, // ο χάρτης γράφει τη διεύθυνση με πεζά/τόνους — η φωνή τη λέει σωστά
       from: myPos, mv, osrm: OSRM, muted: !!S.settings.navMuted, flat: !!S.settings.navFlat, carAudio: !!S.settings.carAudio,
       getPos: () => getPosition(8000),
