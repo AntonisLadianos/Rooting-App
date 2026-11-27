@@ -29,7 +29,17 @@
     if (v.requestVideoFrameCallback) await Promise.race([new Promise((r) => v.requestVideoFrameCallback(() => r())), new Promise((r) => setTimeout(r, 120))]);
   }
 
+  // Ανοίγει το βίντεο. Αν αποτύχει, ξαναδοκιμάζει μία φορά, και το μήνυμα λέει ΠΟΥ κόλλησε (για να το βρούμε).
   async function openVideo(file) {
+    let last = '';
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try { return await openVideoOnce(file); } catch (e) { last = e.message || String(e); }
+      await new Promise((r) => setTimeout(r, 600));
+    }
+    throw new Error('Δεν ανοίγει το βίντεο [' + last + ']');
+  }
+  const MEDIA_ERR = { 1: 'διακόπηκε', 2: 'δίκτυο', 3: 'αποκωδικοποίηση', 4: 'μορφή που δεν υποστηρίζεται' };
+  function openVideoOnce(file) {
     const v = document.createElement('video');
     v.muted = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.setAttribute('muted', ''); v.preload = 'auto';
     // ΜΕΣΑ στην οθόνη (σχεδόν αόρατο, κάτω από το «Κοιτάζω το βίντεο»): το iPhone δεν ζωγραφίζει καρέ για βίντεο εκτός οθόνης
@@ -42,19 +52,38 @@
       try { v.removeAttribute('src'); v.load(); } catch (e) { /* ignore */ }
       v.remove(); URL.revokeObjectURL(url);
     };
-    v.src = url;
-    try {
-      if (v.readyState < 1) await once(v, 'loadedmetadata', 15000);
-      // το iPhone συχνά φορτώνει τα καρέ μόνο όταν αρχίσει να «παίζει»
-      if (v.readyState < 2) {
-        const p = once(v, 'loadeddata', 10000);
-        try { await v.play(); } catch (e) { /* ignore */ }
-        await p;
-      }
-      try { if (v.paused) await v.play(); } catch (e) { /* ignore */ }
-      v.pause();
-    } catch (e) { done(); throw new Error('Δεν ανοίγει το βίντεο'); }
-    return { v, done };
+    let stage = 'φόρτωμα';
+    return new Promise((resolve, reject) => {
+      let over = false;
+      const fail = (why) => {
+        if (over) return; over = true; clearTimeout(timer);
+        const info = `${why}, στάδιο: ${stage}, rs=${v.readyState}, ns=${v.networkState}` + (v.error ? `, σφάλμα ${v.error.code} ${MEDIA_ERR[v.error.code] || ''}` : '') + `, ${file.type || '?'} ${Math.round((file.size || 0) / 1048576)}MB`;
+        done(); reject(new Error(info));
+      };
+      const timer = setTimeout(() => fail('άργησε'), 30000);
+      v.addEventListener('error', () => fail('σφάλμα βίντεο'), { once: true });
+      const ready = async () => {
+        if (over) return;
+        try {
+          stage = 'πρώτο καρέ';
+          // το iPhone συχνά φορτώνει τα καρέ μόνο όταν αρχίσει να «παίζει»
+          if (v.readyState < 2) {
+            const p = once(v, 'loadeddata', 20000);
+            v.play().catch(() => {});
+            await p;
+          }
+          stage = 'έναρξη';
+          try { if (v.paused) await Promise.race([v.play(), new Promise((r) => setTimeout(r, 3000))]); } catch (e) { /* ignore */ }
+          v.pause();
+          if (over) return;
+          over = true; clearTimeout(timer);
+          resolve({ v, done });
+        } catch (e) { fail(e.message || 'άγνωστο'); }
+      };
+      if (v.readyState >= 1) ready(); else v.addEventListener('loadedmetadata', ready, { once: true });
+      v.src = url;
+      try { v.load(); } catch (e) { /* ignore */ }
+    });
   }
 
   // μικρογραφία σε αποχρώσεις του γκρι
@@ -326,7 +355,10 @@
     const canPlay = typeof HTMLVideoElement !== 'undefined' && 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
     let why = '';
     if (canPlay) {
-      try { return await extractFramesPlay(file, onProgress); } catch (e) { why = e && e.message || String(e); } // δοκιμάζουμε τον άλλο τρόπο
+      try { return await extractFramesPlay(file, onProgress); } catch (e) {
+        why = e && e.message || String(e);
+        if (/^Δεν ανοίγει/.test(why)) throw e; // δεν ανοίγει καθόλου: ο άλλος τρόπος δεν θα βοηθήσει
+      } // αλλιώς δοκιμάζουμε τον άλλο τρόπο
     }
     try { return await extractFrames(file, onProgress); } catch (e) { throw new Error((e && e.message || e) + (why ? ` (${why})` : '')); }
   }
