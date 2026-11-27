@@ -67,12 +67,16 @@
   // πόσες γραμμές (της μικρογραφίας) κύλησε το περιεχόμενο από το a στο b (+ = προς τα πάνω, δηλ. κατεβαίνεις τη λίστα)
   // pred = η κύλιση του προηγούμενου βήματος: οι λίστες είναι «επαναλαμβανόμενες» (κάρτες ίδιου σχήματος), οπότε
   // ανάμεσα σε σχεδόν ίσες ταυτίσεις διαλέγουμε αυτή που ταιριάζει με την κίνηση που ήδη έχει το δάχτυλο
-  function shiftOf(a, b, th, pred) {
+  // range: ψάχνουμε μόνο κοντά στην προηγούμενη κίνηση (pred ± range). Ανάμεσα σε διαδοχικά καρέ βίντεο η λίστα
+  // κουνιέται ελάχιστα· αν ψάχναμε παντού, κάρτες που μοιάζουν (ίδιο σχήμα) έδιναν «ταύτιση» 2–3 κάρτες πιο πέρα.
+  function shiftOf(a, b, th, pred, range) {
     const y0 = Math.round(th * TOP), y1 = Math.round(th * (1 - BOT)), H = y1 - y0;
     const maxS = Math.floor(H * 0.85);
+    const lo = range ? Math.max(-maxS, Math.round((pred || 0) - range)) : -maxS;
+    const hi = range ? Math.min(maxS, Math.round((pred || 0) + range)) : maxS;
     const errs = [];
     let minE = Infinity, zeroErr = Infinity;
-    for (let s = -maxS; s <= maxS; s++) {
+    for (let s = lo; s <= hi; s++) {
       // γραμμή y του b = γραμμή y+s του a
       const from = Math.max(y0, y0 - s), to = Math.min(y1, y1 - s);
       const n = to - from;
@@ -270,7 +274,8 @@
               const g = thumb(v, ctx, th);
               let move = 0;
               if (prev) {
-                const r = shiftOf(prev, g, th, lastS);
+                let r = shiftOf(prev, g, th, lastS, Math.max(6, Math.round(H * 0.2)));
+                if (r.err > 16) r = shiftOf(prev, g, th, lastS); // πολύ μεγάλη κίνηση (π.χ. χάθηκαν καρέ): παντού
                 if (r.err > 28) { pos += H; move = H; } // άλλη οθόνη
                 else { pos += r.s; move = Math.abs(r.s); lastS = r.s; }
               }

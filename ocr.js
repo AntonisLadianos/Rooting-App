@@ -394,9 +394,17 @@
     return n > 0 ? n : 1;
   }
   const RE_CODE = /^\S{1,5}\s*-+\s*-?\s*([\p{L}\d][\p{L}\d.)\]]{5,})/u;
+  // Κωδικοί που διαβάστηκαν με ελληνικά γράμματα («Ν5Ρ2ΕΧΒΕδΞΙΟΡΙΥ» αντί «N5D25X58L0DJY»): η ανάγνωση είναι σίγουρα
+  // λάθος, οπότε δεν τους εμπιστευόμαστε για να πούμε «άλλη κάρτα» (σε καρέ βίντεο, βλ. groupCards)
+  const UNSURE = new Set();
   function codesOf(lines) {
-    return lines.map((l) => (l.match(RE_CODE) || [])[1]).filter(Boolean).map(normCode).filter((c) => c.length >= 6);
+    return lines.map((l) => (l.match(RE_CODE) || [])[1]).filter(Boolean).map((raw) => {
+      const c = normCode(raw);
+      if (/[α-ωά-ώΑ-Ω]/.test(raw.replace(/[ΑΒΕΖΗΙΚΜΝΟΡΤΥΧ]/g, ''))) UNSURE.add(c);
+      return c;
+    }).filter((c) => c.length >= 6);
   }
+  const sureCodes = (cs) => (cs || []).filter((c) => !UNSURE.has(c));
   // κωδικοί αποστολής: ενοποίηση γραμμάτων που μοιάζουν (ελληνικά/λατινικά, O/0, I/1 …) για σύγκριση
   const LOOK = { Α: 'A', Β: 'B', Ε: 'E', Ζ: 'Z', Η: 'H', Ι: 'I', Κ: 'K', Μ: 'M', Ν: 'N', Ο: 'O', Ρ: 'P', Τ: 'T', Υ: 'Y', Χ: 'X', Ω: 'W', Λ: 'A', Δ: 'A', Θ: '8', Φ: 'O' };
   function normCode(s) {
@@ -599,8 +607,15 @@
       let same = c.length ? uniq.find((u) => u.img !== it.img && (u.codes || []).length && codesOverlap(u.codes, c) && !phoneDiff(u) &&
         (close(u) || samePhone(u) || nameKey(u.name) === nameKey(it.name) || addrKey(u.address) === addrKey(it.address))) : null;
       // βίντεο: η ίδια κάρτα σε γειτονικά καρέ, ακόμα κι αν δεν διαβάστηκε ο κωδικός ή η διεύθυνση διαβάστηκε αλλιώς
-      if (!same && it.video && it.phone) same = uniq.find((u) => u.video && u.img !== it.img && Math.abs(u.img - it.img) <= 3 && samePhone(u) &&
-        !((u.codes || []).length && c.length && !codesOverlap(u.codes, c)) && !uniq.some((w) => w !== u && w.img === u.img && samePhone(w)));
+      // (διαφορετικοί κωδικοί = άλλη κάρτα, μόνο αν και οι δύο διαβάστηκαν «καθαρά»· και ποτέ όταν στο ίδιο καρέ
+      // υπάρχουν δύο κάρτες με αυτό το τηλέφωνο — τότε είναι όντως πολλές κάρτες του ίδιου πελάτη)
+      if (!same && it.video && it.phone) {
+        const su = (u) => sureCodes(u.codes), si = sureCodes(c);
+        const sibling = (x) => items.some((w) => w !== x && w.img === x.img && w.phone === x.phone);
+        same = uniq.find((u) => u.video && u.img !== it.img && Math.abs(u.img - it.img) <= 3 && samePhone(u) &&
+          !(su(u).length && si.length && !codesOverlap(su(u), si)) &&
+          !((u.codes || []).length && c.length && !codesOverlap(u.codes, c) && (sibling(it) || uniq.some((w) => w !== u && w.img === u.img && samePhone(w)))));
+      }
       if (!same) { uniq.push(Object.assign({}, it)); return; }
       const keep = better(same, it) === it ? Object.assign(same, { address: it.address }) : same;
       keep.img = Math.max(keep.img, it.img); // για τα επόμενα γειτονικά καρέ
@@ -615,7 +630,7 @@
       const match = uniq.find((u) => near(u) && !!u.hub === !!it.hub && (
         (it.hub && u.hub.kind === it.hub.kind && (!it.hub.name || !u.hub.name || lev(nameKey(u.hub.name), nameKey(it.hub.name)) <= 3)) ||
         (it.phone && u.phone === it.phone) ||
-        (nk.length >= 5 && nameKey(u.name) === nk) ||
+        (nk.length >= 5 && (nameKey(u.name) === nk || nameKey(u.name).includes(nk.slice(-10)) || nk.includes(nameKey(u.name).slice(-10)) || lev(nameKey(u.name), nk) <= 3)) ||
         ((u.codes || []).length && (it.codes || []).length && codesOverlap(u.codes, it.codes)) ||
         (ak.length >= 6 && addrKey(u.address) === ak)));
       if (match) return;
