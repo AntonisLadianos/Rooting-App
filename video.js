@@ -31,17 +31,30 @@
 
   async function openVideo(file) {
     const v = document.createElement('video');
-    v.muted = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.preload = 'auto';
-    v.style.cssText = 'position:fixed;left:-10px;top:-10px;width:2px;height:2px;opacity:0;pointer-events:none';
+    v.muted = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.setAttribute('muted', ''); v.preload = 'auto';
+    // ΜΕΣΑ στην οθόνη (σχεδόν αόρατο, κάτω από το «Κοιτάζω το βίντεο»): το iPhone δεν ζωγραφίζει καρέ για βίντεο εκτός οθόνης
+    v.style.cssText = 'position:fixed;left:0;bottom:0;width:48px;height:96px;opacity:0.01;pointer-events:none;z-index:1';
     document.body.appendChild(v);
     const url = URL.createObjectURL(file);
+    const done = () => {
+      try { v.pause(); } catch (e) { /* ignore */ }
+      // απελευθέρωση του αποκωδικοποιητή (αλλιώς το iPhone μπορεί να μην ανοίξει το επόμενο βίντεο)
+      try { v.removeAttribute('src'); v.load(); } catch (e) { /* ignore */ }
+      v.remove(); URL.revokeObjectURL(url);
+    };
     v.src = url;
     try {
-      await once(v, 'loadeddata', 15000);
-    } catch (e) { v.remove(); URL.revokeObjectURL(url); throw new Error('Δεν ανοίγει το βίντεο'); }
-    // το iPhone αποκωδικοποιεί καρέ για canvas μόνο αφού «παίξει» λίγο
-    try { await v.play(); v.pause(); } catch (e) { /* ignore */ }
-    return { v, done: () => { try { v.pause(); } catch (e) { /* ignore */ } v.remove(); URL.revokeObjectURL(url); } };
+      if (v.readyState < 1) await once(v, 'loadedmetadata', 15000);
+      // το iPhone συχνά φορτώνει τα καρέ μόνο όταν αρχίσει να «παίζει»
+      if (v.readyState < 2) {
+        const p = once(v, 'loadeddata', 10000);
+        try { await v.play(); } catch (e) { /* ignore */ }
+        await p;
+      }
+      try { if (v.paused) await v.play(); } catch (e) { /* ignore */ }
+      v.pause();
+    } catch (e) { done(); throw new Error('Δεν ανοίγει το βίντεο'); }
+    return { v, done };
   }
 
   // μικρογραφία σε αποχρώσεις του γκρι
@@ -236,11 +249,11 @@
       };
       try { await seek(v, 0); } catch (e) { /* ignore */ }
       v.playbackRate = 2;
-      let finished = false, busyFrame = false;
+      let finished = false, busyFrame = false, again = null, frameN = 0;
       await new Promise((resolve, reject) => {
         const onFrame = async (now, meta) => {
           if (finished) return;
-          if (busyFrame) { v.requestVideoFrameCallback(onFrame); return; }
+          if (busyFrame) { v.requestVideoFrameCallback(again); return; }
           busyFrame = true;
           try {
             const t = meta && meta.mediaTime != null ? meta.mediaTime : v.currentTime;
@@ -267,18 +280,30 @@
             if (onProgress && dur) onProgress(Math.min(0.99, t / dur));
           } catch (e) { finished = true; reject(e); return; }
           busyFrame = false;
-          if (!finished) { if (v.paused && !v.ended) v.play().catch(() => {}); v.requestVideoFrameCallback(onFrame); }
+          if (!finished) { if (v.paused && !v.ended) v.play().catch(() => {}); v.requestVideoFrameCallback(again); }
         };
         v.addEventListener('ended', async () => {
           // τέλος λίστας: το τελευταίο καρέ, αν κύλησε από το προηγούμενο που κρατήσαμε
           const wait = () => new Promise((r) => { const k = () => (busyFrame ? setTimeout(k, 30) : r()); k(); });
           await wait();
+          if (finished) return;
           finished = true;
+          // έπαιξε, αλλά δεν είδαμε (σχεδόν) κανένα καρέ: ο άλλος τρόπος
+          if (frameN < Math.max(3, (dur || 1) * 2)) { reject(new Error('δεν έρχονται καρέ')); return; }
           try { if (lastPick === null || pos - lastPick > 0.04 * H) await save(v.currentTime); } catch (e) { /* ignore */ }
           resolve();
         }, { once: true });
-        v.requestVideoFrameCallback(onFrame);
-        v.play().catch(reject);
+        // φύλακας: αν δεν έρχονται καρέ (π.χ. το iPhone δεν το αφήνει να παίξει), περνάμε στον άλλο τρόπο
+        let lastFrameAt = Date.now();
+        const origOnFrame = onFrame;
+        const wrapped = (now, meta) => { lastFrameAt = Date.now(); frameN++; return origOnFrame(now, meta); };
+        again = wrapped;
+        const dog = setInterval(() => {
+          if (finished) { clearInterval(dog); return; }
+          if (!busyFrame && !v.paused && Date.now() - lastFrameAt > 6000) { finished = true; clearInterval(dog); reject(new Error('δεν έρχονται καρέ')); }
+        }, 1000);
+        v.requestVideoFrameCallback(wrapped);
+        v.play().catch((e) => { finished = true; clearInterval(dog); reject(new Error('δεν παίζει: ' + (e && e.name || e))); });
       });
       return { files, gaps, times, duration: dur };
     } finally { done(); }
@@ -286,10 +311,11 @@
   // Αν ο browser δεν μπορεί να «παίξει» το βίντεο καρέ-καρέ, ο παλιός τρόπος (με πηδήματα)
   async function extractFramesAuto(file, onProgress) {
     const canPlay = typeof HTMLVideoElement !== 'undefined' && 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
+    let why = '';
     if (canPlay) {
-      try { return await extractFramesPlay(file, onProgress); } catch (e) { /* δοκιμάζουμε τον άλλο τρόπο */ }
+      try { return await extractFramesPlay(file, onProgress); } catch (e) { why = e && e.message || String(e); } // δοκιμάζουμε τον άλλο τρόπο
     }
-    return extractFrames(file, onProgress);
+    try { return await extractFrames(file, onProgress); } catch (e) { throw new Error((e && e.message || e) + (why ? ` (${why})` : '')); }
   }
 
   global.RootingVideo = { extractFrames: extractFramesAuto, extractFramesSeek: extractFrames, extractFramesPlay, _choose: choose, _shiftOf: shiftOf };
