@@ -206,5 +206,91 @@
     } finally { done(); }
   }
 
-  global.RootingVideo = { extractFrames, _choose: choose, _shiftOf: shiftOf };
+  // ---------- Τρόπος «αναπαραγωγής» (κύριος) ----------
+  // Το βίντεο ΠΑΙΖΕΙ (σε διπλή ταχύτητα, χωρίς ήχο) και κοιτάμε ΚΑΘΕ καρέ που εμφανίζεται. Δύο λόγοι:
+  //  • το «πήδημα» σε σημεία του βίντεο (seek) στο iPhone καμιά φορά δίνει λάθος/παλιό καρέ
+  //  • ανάμεσα σε διαδοχικά καρέ η λίστα κυλάει ελάχιστα, οπότε η μέτρηση δεν μπερδεύεται από κάρτες
+  //    που μοιάζουν μεταξύ τους (π.χ. 5 κάρτες του ίδιου πελάτη ή Locker το ένα κάτω από το άλλο)
+  // Τα καρέ που κρατάμε αποθηκεύονται ΤΗ ΣΤΙΓΜΗ που φαίνονται (όχι με δεύτερο πέρασμα).
+  async function extractFramesPlay(file, onProgress) {
+    const { v, done } = await openVideo(file);
+    try {
+      const vw = v.videoWidth, vh = v.videoHeight;
+      if (!vw || !vh) throw new Error('Δεν ανοίγει το βίντεο');
+      const dur = isFinite(v.duration) && v.duration > 0 ? v.duration : 0;
+      const th = Math.max(40, Math.round(TW * vh / vw));
+      const c = document.createElement('canvas'); c.width = TW; c.height = th;
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      const big = document.createElement('canvas'); big.width = vw; big.height = vh;
+      const bctx = big.getContext('2d');
+      const H = Math.round(th * (1 - TOP - BOT));
+      const files = [], times = [];
+      let prev = null, pos = 0, lastPick = null, lastS = 0, gaps = 0, still = 0;
+      let candidate = null; // το πιο ακίνητο καρέ μέσα στο «παράθυρο» (το κρατάμε σε μικρογραφία, όχι σε πλήρη ανάλυση)
+      const save = async (t) => {
+        v.pause();
+        bctx.drawImage(v, 0, 0, vw, vh);
+        const blob = await new Promise((r) => big.toBlob(r, 'image/jpeg', 0.92));
+        if (blob) { files.push(new File([blob], `kare-${String(files.length + 1).padStart(2, '0')}.jpg`, { type: 'image/jpeg' })); times.push(t); }
+        lastPick = pos; candidate = null;
+      };
+      try { await seek(v, 0); } catch (e) { /* ignore */ }
+      v.playbackRate = 2;
+      let finished = false, busyFrame = false;
+      await new Promise((resolve, reject) => {
+        const onFrame = async (now, meta) => {
+          if (finished) return;
+          if (busyFrame) { v.requestVideoFrameCallback(onFrame); return; }
+          busyFrame = true;
+          try {
+            const t = meta && meta.mediaTime != null ? meta.mediaTime : v.currentTime;
+            const g = thumb(v, ctx, th);
+            let move = 0;
+            if (prev) {
+              const r = shiftOf(prev, g, th, lastS);
+              if (r.err > 28) { pos += H; move = H; } // άλλη οθόνη
+              else { pos += r.s; move = Math.abs(r.s); lastS = r.s; }
+            }
+            prev = g;
+            still = move <= 0.01 * H ? still + 1 : 0;
+            // γρήγορη κύλιση: πιο αργά (κανονική ταχύτητα), αλλιώς διπλή — για να μη «πηδάμε» κομμάτια της λίστας
+            const rate = move > 0.06 * H ? 0.75 : (move > 0.03 * H ? 1 : 2);
+            if (v.playbackRate !== rate) v.playbackRate = rate;
+            if (lastPick === null) await save(t); // το πρώτο καρέ
+            else {
+              const adv = pos - lastPick;
+              // μέσα στο παράθυρο 0,3–0,48 οθόνης: κρατάμε μόλις «ησυχάσει» η κίνηση· αλλιώς στο όριο, ό,τι κι αν είναι
+              if (adv >= 0.3 * H && (still >= 1 || move <= 0.015 * H)) await save(t);
+              // αν με το επόμενο καρέ θα ξεπεράσουμε το όριο, κρατάμε αυτό (με γρήγορη κύλιση δεν περιμένουμε)
+              else if (adv >= 0.48 * H || (adv >= 0.25 * H && adv + move > 0.48 * H)) { if (adv > 0.75 * H) gaps++; await save(t); }
+            }
+            if (onProgress && dur) onProgress(Math.min(0.99, t / dur));
+          } catch (e) { finished = true; reject(e); return; }
+          busyFrame = false;
+          if (!finished) { if (v.paused && !v.ended) v.play().catch(() => {}); v.requestVideoFrameCallback(onFrame); }
+        };
+        v.addEventListener('ended', async () => {
+          // τέλος λίστας: το τελευταίο καρέ, αν κύλησε από το προηγούμενο που κρατήσαμε
+          const wait = () => new Promise((r) => { const k = () => (busyFrame ? setTimeout(k, 30) : r()); k(); });
+          await wait();
+          finished = true;
+          try { if (lastPick === null || pos - lastPick > 0.04 * H) await save(v.currentTime); } catch (e) { /* ignore */ }
+          resolve();
+        }, { once: true });
+        v.requestVideoFrameCallback(onFrame);
+        v.play().catch(reject);
+      });
+      return { files, gaps, times, duration: dur };
+    } finally { done(); }
+  }
+  // Αν ο browser δεν μπορεί να «παίξει» το βίντεο καρέ-καρέ, ο παλιός τρόπος (με πηδήματα)
+  async function extractFramesAuto(file, onProgress) {
+    const canPlay = typeof HTMLVideoElement !== 'undefined' && 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
+    if (canPlay) {
+      try { return await extractFramesPlay(file, onProgress); } catch (e) { /* δοκιμάζουμε τον άλλο τρόπο */ }
+    }
+    return extractFrames(file, onProgress);
+  }
+
+  global.RootingVideo = { extractFrames: extractFramesAuto, extractFramesSeek: extractFrames, extractFramesPlay, _choose: choose, _shiftOf: shiftOf };
 })(typeof window !== 'undefined' ? window : globalThis);
