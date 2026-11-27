@@ -60,7 +60,7 @@ async function page(state, dev) {
   p.ctx = ctx;
   return p;
 }
-const settings = (x) => Object.assign({ navApp: 'inapp', serviceMin: 3 }, x || {});
+const settings = (x) => Object.assign({ navApp: 'inapp', serviceMin: 3, guide: { done: true } }, x || {});
 const idle = (p) => p.waitForFunction(() => document.getElementById('busy').classList.contains('hidden'), null, { timeout: 20000 });
 const stored = (p) => p.evaluate(() => JSON.parse(localStorage.getItem('rooting.v1')));
 
@@ -283,6 +283,31 @@ function expect(cond, msg) { if (!cond) throw new Error(msg); }
     const fr = await p.evaluate(() => window.__frames);
     expect(fr.length >= 6 && fr.length <= 30, 'λάθος πλήθος καρέ: ' + fr.length);
     expect(fr.every((f) => f.type === 'image/jpeg' && f.size > 5000), 'τα καρέ δεν είναι εικόνες: ' + JSON.stringify(fr.slice(0, 3)));
+    return p;
+  });
+
+  await test('Οδηγός ρύθμισης: ανοίγει μόνος του σε νέο χρήστη, θυμάται το βήμα μετά από κλείσιμο, ξαναβρίσκεται στο ☰', async () => {
+    const p = await page({ stops: [], route: null, settings: { navApp: 'inapp' } });
+    await p.waitForSelector('#gNext', { timeout: 8000 });
+    expect(/Βήμα 1/.test(await p.textContent('#modalBody')), 'δεν ξεκίνησε από το βήμα 1');
+    await p.click('#gNext'); await p.click('#gNext'); await p.waitForTimeout(200);
+    const t1 = await p.textContent('#modalTitle');
+    // «κλείνει» την εφαρμογή (π.χ. για να πάει στη Google) και την ξανανοίγει
+    await p.reload(); await p.waitForSelector('#gNext', { timeout: 8000 });
+    expect(await p.textContent('#modalTitle') === t1 && /Βήμα 3/.test(await p.textContent('#modalBody')), 'δεν συνέχισε από το ίδιο βήμα: ' + await p.textContent('#modalTitle'));
+    // τσεκάρει υπηρεσίες· μένουν τσεκαρισμένες
+    while (!(await p.$('[data-api]'))) await p.click('#gNext');
+    await p.check('[data-api="vision.googleapis.com"]');
+    await p.reload(); await p.waitForSelector('[data-api]', { timeout: 8000 });
+    expect(await p.isChecked('[data-api="vision.googleapis.com"]'), 'χάθηκε το τσεκάρισμα');
+    // τελευταίο βήμα: λάθος κλειδί δεν γίνεται δεκτό
+    while (!(await p.$('#gSave'))) await p.click('#gNext');
+    await p.fill('#gKey', 'λάθος'); await p.click('#gSave');
+    expect(/δεν μοιάζει/.test(await p.textContent('#gInfo')), 'δέχτηκε λάθος κλειδί');
+    // «αργότερα»: κλείνει και δεν ξαναβγαίνει μόνος του, αλλά υπάρχει στο ☰
+    await p.click('#gSkip'); await p.reload(); await p.waitForTimeout(1500);
+    expect(!(await p.$('#gNext')) && !(await p.$('#gSave')), 'ξαναβγήκε ενώ πάτησε «αργότερα»');
+    await p.click('#btnMenu'); await p.click('#btnGuide'); await p.waitForSelector('.guide-prog', { timeout: 3000 });
     return p;
   });
 

@@ -814,3 +814,18 @@ body.kb-open .modal-sheet { margin: 0 10px calc(var(--kbpad, 0px) + 8px); width:
 @media (orientation: landscape) and (max-height: 560px) {
   .nav-road { position: fixed; top: auto; bottom: 12px; left: calc(12px + env(safe-area-inset-left, 0px)); max-width: 40vw; }
 }
+/* οδηγός πρώτης ρύθμισης */
+.guide-prog { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+.guide-prog .progress { margin-top: 5px; }
+.guide-body p { margin: 0 0 10px; line-height: 1.45; }
+.guide-ol { padding-left: 20px; margin: 0 0 12px; line-height: 1.5; }
+.guide-ol li { margin-bottom: 6px; }
+.guide-code { display: inline-block; margin: 4px 6px 4px 0; padding: 3px 6px; border-radius: 6px; background: rgba(127,127,127,.15); font-size: 13px; word-break: break-all; }
+.guide-apis { display: grid; gap: 8px; }
+.guide-api { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border-radius: 10px; background: rgba(127,127,127,.1); }
+.guide-api label { display: flex; gap: 8px; align-items: flex-start; }
+.guide-api input { margin-top: 3px; }
+.guide-nav { display: flex; gap: 8px; margin-top: 14px; }
+.guide-nav .btn { flex: 1; }
+.guide-skip { display: block; margin: 12px auto 4px; font-size: 14px; }
+#gKey { width: 100%; margin-bottom: 8px; }

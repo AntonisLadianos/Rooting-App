@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '107';
+  const APP_VERSION = '108';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -2158,6 +2158,93 @@
     });
   }
 
+  // ---------- Οδηγός πρώτης ρύθμισης (για νέους οδηγούς) ----------
+  // Το βήμα σώζεται στο κινητό: αν κλείσει την εφαρμογή για να πάει στη Google, ξαναβρίσκει τον οδηγό εκεί που έμεινε.
+  // Εμφανίζεται μόνος του σε όποιον δεν έχει κλειδί, ώσπου να τελειώσει ή να διαλέξει «Χωρίς Google».
+  const GAPI = [
+    ['geocoding-backend.googleapis.com', 'Geocoding API', 'εύρεση διευθύνσεων'],
+    ['maps-backend.googleapis.com', 'Maps JavaScript API', 'χάρτης Google'],
+    ['routes.googleapis.com', 'Routes API', 'διαδρομές με μονόδρομους'],
+    ['vision.googleapis.com', 'Cloud Vision API', 'ανάγνωση screenshots/βίντεο']
+  ];
+  const isStandalone = () => !!(navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches));
+  function guideState() { S.settings.guide = S.settings.guide || { step: 0, apis: {} }; return S.settings.guide; }
+  function guideSteps() {
+    const ext = (href, txt) => `<a class="btn btn-primary btn-block" href="${href}" target="_blank" rel="noopener">${ic('globe')} ${txt}</a>`;
+    const st = [];
+    st.push({ t: 'Καλώς ήρθες!', h: `<p>Το Rooting βγάζει τη σειρά των στάσεων και σε πηγαίνει με φωνή. Διευθύνσεις βάζεις από <b>screenshots</b>, <b>βίντεο</b> ή λίστα.</p>
+      <p>Δουλεύει <b>και χωρίς τίποτα</b> (δωρεάν χάρτες). Με ένα δικό σου <b>κλειδί Google</b> όμως βρίσκει τις διευθύνσεις με ακριβή αριθμό και διαβάζει τα screenshots πολύ καλύτερα.</p>
+      <p class="muted small">Το κλειδί είναι δικό σου και μένει μόνο στο κινητό σου. Ο οδηγός θέλει ~10 λεπτά και θυμάται πού έμεινες — μπορείς να κλείσεις την εφαρμογή και να συνεχίσεις μετά.</p>` });
+    if (!isStandalone()) st.push({ t: 'Βάλ’ την στην αρχική οθόνη', h: `<ol class="guide-ol"><li>Στο Safari πάτα το κουμπί <b>Κοινοποίηση</b> (τετράγωνο με βελάκι ⬆️) κάτω στη μέση.</li>
+      <li>Διάλεξε <b>«Προσθήκη στην οθόνη Αφετηρίας»</b> → <b>Προσθήκη</b>.</li><li>Κλείσε το Safari και άνοιξε το <b>Rooting</b> από το εικονίδιο. Ο οδηγός θα συνεχίσει από εκεί.</li></ol>
+      <p class="muted small">Έτσι ανοίγει σαν κανονική εφαρμογή, σε όλη την οθόνη, και δουλεύει και χωρίς internet.</p>` });
+    st.push({ t: 'Λογαριασμός Google Cloud', h: `<ol class="guide-ol"><li>Άνοιξε το Google Cloud και συνδέσου με το Gmail σου. Δέξου τους όρους.</li>
+      <li>Πάνω-πάνω πάτα <b>«Επιλογή έργου»</b> → <b>«Νέο έργο»</b>, δώσε όνομα π.χ. <b>Rooting</b> → <b>Δημιουργία</b>.</li></ol>${ext('https://console.cloud.google.com/projectcreate', 'Άνοιγμα Google Cloud')}
+      <p class="muted small">Όταν τελειώσεις, πάτα <b>«Τέλος»/«Done»</b> πάνω αριστερά για να γυρίσεις εδώ.</p>` });
+    st.push({ t: 'Χρέωση (κάρτα)', h: `<p>Η Google ζητάει κάρτα, αλλά δίνει <b>δωρεάν όρια κάθε μήνα</b> (π.χ. 10.000 αναζητήσεις διευθύνσεων, 1.000 εικόνες). Ένας οδηγός μένει συνήθως μέσα σε αυτά.</p>
+      <p>Η εφαρμογή <b>μετράει</b> μόνη της και <b>σε ρωτάει πριν περάσεις</b> το δωρεάν όριο — δεν χρεώνεσαι χωρίς να το ξέρεις.</p>
+      <ol class="guide-ol"><li>Άνοιξε τη Χρέωση → <b>«Σύνδεση λογαριασμού χρέωσης»</b> / <b>«Δημιουργία»</b>.</li><li>Βάλε τα στοιχεία της κάρτας και σύνδεσέ τον με το έργο <b>Rooting</b>.</li></ol>${ext('https://console.cloud.google.com/billing', 'Άνοιγμα Χρέωσης')}` });
+    const g = guideState();
+    st.push({ t: 'Ενεργοποίηση υπηρεσιών', h: `<p>Πάτα καθένα, και στη σελίδα που ανοίγει πάτα το μπλε <b>«Ενεργοποίηση» / «Enable»</b>. Μετά τσέκαρέ το εδώ.</p>
+      <div class="guide-apis">${GAPI.map(([id, name, what]) => `<div class="guide-api"><label><input type="checkbox" data-api="${id}" ${g.apis && g.apis[id] ? 'checked' : ''}> <b>${name}</b><br><small class="muted">${what}</small></label>
+        <a class="btn btn-ghost" href="https://console.cloud.google.com/apis/library/${id}" target="_blank" rel="noopener">Άνοιγμα</a></div>`).join('')}</div>` });
+    st.push({ t: 'Δημιουργία κλειδιού', h: `<ol class="guide-ol"><li>Άνοιξε τα <b>Διαπιστευτήρια</b> → <b>«+ Δημιουργία διαπιστευτηρίων»</b> → <b>«Κλειδί API»</b>.</li>
+      <li>Αν σε ρωτήσει, στους <b>περιορισμούς εφαρμογής</b> διάλεξε <b>«Ιστότοποι»</b> και πρόσθεσε:<br><code class="guide-code">${esc(location.origin)}/*</code>
+      <button class="btn btn-ghost btn-sm" id="gCopyOrigin">Αντιγραφή</button></li>
+      <li>Στους <b>περιορισμούς API</b> διάλεξε τις 4 υπηρεσίες του προηγούμενου βήματος. <b>Αποθήκευση</b>.</li>
+      <li>Πάτα <b>«Εμφάνιση κλειδιού»</b> και <b>αντιγραφή</b> (ξεκινάει με <b>AIza</b>…).</li></ol>${ext('https://console.cloud.google.com/apis/credentials', 'Άνοιγμα Διαπιστευτηρίων')}
+      <p class="muted small">Οι περιορισμοί κάνουν το κλειδί άχρηστο για οποιονδήποτε άλλο, ακόμα κι αν το δει.</p>` });
+    st.push({ t: 'Επικόλληση κλειδιού', h: `<p>Επικόλλησε εδώ το κλειδί που αντέγραψες:</p>
+      <input id="gKey" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="AIza…" value="${esc(S.settings.googleKey || '')}">
+      <div class="row-btns"><button class="btn btn-ghost" id="gPaste">${ic('list')} Επικόλληση</button><button class="btn btn-primary" id="gSave">Αποθήκευση & δοκιμή</button></div>
+      <p class="muted small" id="gInfo"></p>`, last: true });
+    return st;
+  }
+  function openGuide(runTest) {
+    const g = guideState();
+    const steps = guideSteps();
+    g.step = Math.max(0, Math.min(g.step || 0, steps.length - 1));
+    const st = steps[g.step];
+    openModal(`${st.t}`, `<div class="guide-prog">Βήμα ${g.step + 1} από ${steps.length}<div class="progress"><div style="width:${Math.round((g.step + 1) / steps.length * 100)}%"></div></div></div>
+      <div class="guide-body">${st.h}</div>
+      <div class="guide-nav">${g.step ? '<button class="btn btn-ghost" id="gBack">‹ Πίσω</button>' : ''}${st.last ? '' : '<button class="btn btn-primary" id="gNext">Επόμενο ›</button>'}</div>
+      <button class="linkish guide-skip" id="gSkip">${g.step === 0 ? 'Χωρίς Google — ξεκίνα με τα δωρεάν' : 'Άφησέ το για αργότερα (θα το βρεις στο ☰)'}</button>`, (b) => {
+      const go = (d) => { g.step += d; save(); openGuide(); };
+      if (b.querySelector('#gBack')) b.querySelector('#gBack').onclick = () => go(-1);
+      if (b.querySelector('#gNext')) b.querySelector('#gNext').onclick = () => go(1);
+      b.querySelector('#gSkip').onclick = () => { g.done = true; save(); closeModal(); toast('Ο οδηγός είναι στο ☰ → «Οδηγός ρύθμισης»'); };
+      b.querySelectorAll('[data-api]').forEach((c) => { c.onchange = () => { g.apis = g.apis || {}; g.apis[c.dataset.api] = c.checked; save(); }; });
+      const co = b.querySelector('#gCopyOrigin');
+      if (co) co.onclick = async () => { try { await navigator.clipboard.writeText(location.origin + '/*'); toast('Αντιγράφηκε'); } catch (e) { toast('Κράτα το πατημένο και «Αντιγραφή»'); } };
+      const paste = b.querySelector('#gPaste');
+      if (paste) paste.onclick = async () => {
+        try { const t = (await navigator.clipboard.readText() || '').trim(); const m = t.match(/AIza[0-9A-Za-z_-]{30,}/); b.querySelector('#gKey').value = m ? m[0] : t; }
+        catch (e) { toast('Κράτα πατημένο το πεδίο και διάλεξε «Επικόλληση»'); }
+      };
+      const sv = b.querySelector('#gSave');
+      if (sv) sv.onclick = () => {
+        const k = b.querySelector('#gKey').value.trim();
+        const info = b.querySelector('#gInfo');
+        if (!/^AIza[0-9A-Za-z_-]{30,}$/.test(k)) { info.textContent = '⚠️ Αυτό δεν μοιάζει με κλειδί Google (ξεκινάει με AIza…). Αντίγραψέ το ξανά.'; return; }
+        S.settings.googleKey = k; S.settings.visionOcr = true; S.settings.googleNav = true; save();
+        info.textContent = 'Επαναφόρτωση…';
+        try { sessionStorage.setItem('rooting.guideTest', '1'); } catch (e) { /* ignore */ }
+        location.reload();
+      };
+      if (runTest && b.querySelector('#gInfo')) {
+        const info = b.querySelector('#gInfo');
+        testGoogleKey(info).then(() => {
+          if (/^✅/.test(info.textContent)) {
+            g.done = true; save();
+            info.innerHTML = esc(info.textContent) + '<br><b>Έτοιμο!</b> Η εφαρμογή χρησιμοποιεί πλέον το κλειδί σου. <button class="btn btn-success btn-block" id="gEnd" style="margin-top:8px">Ξεκίνα</button>';
+            info.querySelector('#gEnd').onclick = () => closeModal();
+          }
+        });
+      }
+    });
+  }
+  $('btnGuide').onclick = () => { setMenu(false); const g = guideState(); if (g.done && !S.settings.googleKey) g.step = Math.min(g.step || 0, 1); g.done = false; save(); openGuide(); };
+
   $('btnLocate').onclick = async () => {
     try { const p = await getPosition(); if (mv) mv.setView(p.lat, p.lng, 15); startWatch(); }
     catch (e) { toast(e.message); }
@@ -2706,6 +2793,9 @@
     // μετά από αλλαγή κλειδιού: δοκιμή και εμφάνιση αποτελέσματος
     try {
       if (sessionStorage.getItem('rooting.testGoogle')) { sessionStorage.removeItem('rooting.testGoogle'); openSettings(true); }
+      else if (sessionStorage.getItem('rooting.guideTest')) { sessionStorage.removeItem('rooting.guideTest'); openGuide(true); }
+      // νέος οδηγός (χωρίς κλειδί): ο οδηγός ρύθμισης ανοίγει μόνος του, εκεί που είχε μείνει
+      else if (!S.settings.googleKey && !(S.settings.guide && S.settings.guide.done)) openGuide();
     } catch (e) { /* ignore */ }
   });
   // ---------- Αυτόματη ενημέρωση ----------
