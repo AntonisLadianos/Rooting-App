@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '108';
+  const APP_VERSION = '109';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -956,7 +956,7 @@
     if (failed) markFailed(s.id); else markDone(s.id, true);
     const next = orderedStops().find((x) => !x.done);
     if (next) startInAppNav(next);
-    else { RootingNav.stop(); toast('🎉 Τελείωσες όλες τις στάσεις!'); }
+    else { RootingNav.stop(); toast('🎉 Τελείωσες όλες τις στάσεις!'); setTimeout(() => maybeBackupReminder(true), 2500); }
   }
   function renderNavUndo() {
     $('navUndo').innerHTML = undoLastHtml('undo-last');
@@ -2047,20 +2047,7 @@
         <p class="muted small">${S.settings.lastBackup ? 'Τελευταίο αντίγραφο: ' + new Date(S.settings.lastBackup).toLocaleDateString('el-GR') : 'Δεν έχεις κρατήσει ακόμα αντίγραφο.'} Το αρχείο περιέχει το κλειδί σου — μην το στέλνεις σε άλλους.</p>
       </div>
       <p class="muted small">Χάρτες: © OpenStreetMap contributors. Δρομολόγηση: OSRM. Αναζήτηση: ${S.settings.googleKey ? 'Google, ' : ''}Photon / Nominatim.<br>Τα δεδομένα σου αποθηκεύονται μόνο σε αυτό το κινητό.<br>Έκδοση ${APP_VERSION}</p>`, (b) => {
-      b.querySelector('#sBackup').onclick = async () => {
-        S.settings.lastBackup = Date.now(); save();
-        const data = JSON.stringify({ app: 'rooting', v: 1, at: new Date().toISOString(), state: S, geo: geoLoad() });
-        const name = `rooting-backup-${new Date().toISOString().slice(0, 10)}.json`;
-        try {
-          const file = new File([data], name, { type: 'application/json' });
-          if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'Rooting — αντίγραφο ασφαλείας' }); toast('Το αντίγραφο είναι έτοιμο'); return; }
-        } catch (e) { if (e && e.name === 'AbortError') return; }
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' })); a.download = name;
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-        toast('Το αντίγραφο κατέβηκε');
-      };
+      b.querySelector('#sBackup').onclick = () => doBackup();
       const rf = b.querySelector('#sRestoreFile');
       b.querySelector('#sRestore').onclick = () => { rf.value = ''; rf.click(); };
       rf.onchange = async () => {
@@ -2156,6 +2143,50 @@
       };
       if (runTest) testGoogleKey(info);
     });
+  }
+
+  // ---------- Αντίγραφο ασφαλείας ----------
+  // Σώζει στάσεις, ρυθμίσεις (και κλειδί), Locker και τη μνήμη διευθύνσεων σε ένα αρχείο (Αρχεία / iCloud).
+  async function doBackup() {
+    const data = JSON.stringify({ app: 'rooting', v: 1, at: new Date().toISOString(), state: S, geo: geoLoad() });
+    const name = `rooting-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    const ok = (msg) => { S.settings.lastBackup = Date.now(); delete S.settings.backupSnooze; save(); toast(msg); return true; };
+    try {
+      const file = new File([data], name, { type: 'application/json' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'Rooting — αντίγραφο ασφαλείας' }); return ok('Το αντίγραφο είναι έτοιμο'); }
+    } catch (e) { if (e && e.name === 'AbortError') return false; }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' })); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    return ok('Το αντίγραφο κατέβηκε');
+  }
+  // Υπενθύμιση μία φορά την εβδομάδα (όχι στη μέση της δουλειάς): στο άνοιγμα χωρίς εκκρεμείς στάσεις, ή μόλις τελειώσεις όλες.
+  const WEEK = 7 * 86400000;
+  function backupDue() {
+    const now = Date.now();
+    S.settings.firstUse = S.settings.firstUse || now;
+    if (S.settings.backupSnooze && S.settings.backupSnooze > now) return false;
+    const geoN = Object.keys(geoLoad()).length;
+    if (geoN < 10 && !Object.keys(S.hubs || {}).length && !(S.places || []).length) return false; // τίποτα πολύτιμο ακόμα
+    const since = S.settings.lastBackup || S.settings.firstUse;
+    return now - since >= WEEK;
+  }
+  function maybeBackupReminder(force) {
+    try {
+      if (!backupDue() || RootingNav.active() || !$('modal').classList.contains('hidden')) return;
+      if (!force && S.stops.some((x) => !x.done && !x.failed)) return; // όχι πριν/στη μέση του δρομολογίου
+      const geoN = Object.keys(geoLoad()).length;
+      const days = S.settings.lastBackup ? Math.floor((Date.now() - S.settings.lastBackup) / 86400000) : 0;
+      openModal('Αντίγραφο ασφαλείας', `<p>${S.settings.lastBackup ? `Έχεις <b>${days} μέρες</b> να κρατήσεις αντίγραφο.` : 'Δεν έχεις κρατήσει ακόμα αντίγραφο.'}</p>
+        <p>Όλα μένουν μόνο σε αυτό το κινητό — και η <b>μνήμη ${geoN} διευθύνσεων</b> με όσες έχεις διορθώσει με το χέρι. Αν χαθεί ή αλλάξει το κινητό, χάνονται.</p>
+        <p class="muted small">Πάτα «Αποθήκευση» και διάλεξε <b>«Αποθήκευση στα Αρχεία»</b> (π.χ. iCloud Drive). Το αρχείο περιέχει και το κλειδί σου — μην το στέλνεις σε άλλους.</p>
+        <button class="btn btn-primary btn-block" id="bkNow">${ic('download')} Αποθήκευση τώρα</button>
+        <button class="btn btn-ghost btn-block" id="bkLater">Αργότερα</button>`, (b) => {
+        b.querySelector('#bkNow').onclick = async () => { if (await doBackup()) closeModal(); };
+        b.querySelector('#bkLater').onclick = () => { S.settings.backupSnooze = Date.now() + 2 * 86400000; save(); closeModal(); }; // ξανά σε 2 μέρες
+      });
+    } catch (e) { /* ignore */ }
   }
 
   // ---------- Οδηγός πρώτης ρύθμισης (για νέους οδηγούς) ----------
@@ -2796,6 +2827,7 @@
       else if (sessionStorage.getItem('rooting.guideTest')) { sessionStorage.removeItem('rooting.guideTest'); openGuide(true); }
       // νέος οδηγός (χωρίς κλειδί): ο οδηγός ρύθμισης ανοίγει μόνος του, εκεί που είχε μείνει
       else if (!S.settings.googleKey && !(S.settings.guide && S.settings.guide.done)) openGuide();
+      else setTimeout(() => maybeBackupReminder(false), 2500);
     } catch (e) { /* ignore */ }
   });
   // ---------- Αυτόματη ενημέρωση ----------

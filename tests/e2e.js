@@ -311,6 +311,24 @@ function expect(cond, msg) { if (!cond) throw new Error(msg); }
     return p;
   });
 
+  await test('Αντίγραφο ασφαλείας: υπενθύμιση μετά από μια εβδομάδα, όχι με εκκρεμείς στάσεις, «Αργότερα» την αναβάλλει', async () => {
+    const old = Date.now() - 8 * 86400000;
+    const geo = {}; for (let i = 0; i < 12; i++) geo['dokimastiki ' + i] = { lat: 35.33, lng: 25.13, label: 'Δοκιμαστική ' + i };
+    // με εκκρεμείς στάσεις: δεν ενοχλεί
+    let p = await page({ stops: STOPS(), route: ROUTE(['a', 'b', 'c']), settings: settings({ lastBackup: old }) });
+    await p.evaluate((g) => localStorage.setItem('rooting.geo', JSON.stringify(g)), geo); await p.reload(); await p.waitForTimeout(3500);
+    expect(!(await p.$('#bkNow')), 'εμφανίστηκε στη μέση του δρομολογίου');
+    await p.ctx.close();
+    // χωρίς εκκρεμείς στάσεις: εμφανίζεται
+    p = await page({ stops: [], route: null, settings: settings({ lastBackup: old }) });
+    await p.evaluate((g) => localStorage.setItem('rooting.geo', JSON.stringify(g)), geo); await p.reload();
+    await p.waitForSelector('#bkNow', { timeout: 6000 });
+    expect(/8 μέρες/.test(await p.textContent('#modalBody')) && /12 διευθύνσεων/.test(await p.textContent('#modalBody')), 'λάθος κείμενο: ' + await p.textContent('#modalBody'));
+    await p.click('#bkLater'); await p.reload(); await p.waitForTimeout(3500);
+    expect(!(await p.$('#bkNow')), 'ξαναβγήκε αμέσως μετά το «Αργότερα»');
+    return p;
+  });
+
   await test('Πλοήγηση: αν περάσεις τη διεύθυνση χωρίς ✓, το ζουμ φεύγει και σε ακολουθεί, και στην επιστροφή ξαναφτάνεις', async () => {
     const p = await page({ stops: STOPS(), route: ROUTE(['a', 'b', 'c']), settings: settings() });
     await p.click('#btnNavNext'); await p.waitForTimeout(2000);
