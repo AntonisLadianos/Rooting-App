@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '99';
+  const APP_VERSION = '100';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -1664,15 +1664,18 @@
   }
 
   // ---------- Διευθύνσεις από screenshot ----------
+  // Δύο χωριστά κουμπιά: «Screenshot» (ο παλιός τρόπος, μόνο εικόνες) και «Βίντεο» (εγγραφή οθόνης)
   $('btnShot').onclick = () => { $('shotInput').value = ''; $('shotInput').click(); };
-  $('shotInput').addEventListener('change', async (e) => {
-    let files = Array.from(e.target.files || []);
+  $('btnVideo').onclick = () => { $('videoInput').value = ''; $('videoInput').click(); };
+  $('shotInput').addEventListener('change', (e) => importShots(Array.from(e.target.files || []), false));
+  $('videoInput').addEventListener('change', (e) => importShots(Array.from(e.target.files || []), true));
+  async function importShots(files, asVideo) {
     if (!files.length) return;
     // Βίντεο (εγγραφή οθόνης): γίνεται λίγα καθαρά καρέ, που διαβάζονται όπως τα screenshots
     let videoGaps = 0, fromVideo = 0;
     const videoFrames = new Set();
-    const isVideo = (f) => /^video\//.test(f.type) || /\.(mov|mp4|m4v|webm)$/i.test(f.name || '');
-    if (files.some(isVideo)) {
+    const isVideo = (f) => asVideo && !/^image\//.test(f.type);
+    if (asVideo && files.some(isVideo)) {
       const out = [];
       try {
         for (const f of files) {
@@ -1734,7 +1737,7 @@
       return Object.assign({}, g, { dup: !!(m && m.dup), mergeInto: m && !m.dup ? m.stop.id : null });
     });
     reviewFound(items, perImage.some((x) => x && x.depot), fromVideo ? files.filter((f) => videoFrames.has(f)) : null);
-  });
+  }
 
   // Υπάρχει ήδη στάση στην ίδια διεύθυνση; dup = ίδια δέματα (κωδικοί/ονόματα), αλλιώς θα προστεθούν σε αυτήν
   function matchExisting(g) {

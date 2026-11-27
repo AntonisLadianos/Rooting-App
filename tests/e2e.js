@@ -276,7 +276,7 @@ function expect(cond, msg) { if (!cond) throw new Error(msg); }
       window.__frames = [];
       RootingOCR.recognize = async (f) => { window.__frames.push({ type: f.type, size: f.size }); return { text: '', ambig: [] }; };
       const dt = new DataTransfer(); dt.items.add(file);
-      const inp = document.getElementById('shotInput'); inp.files = dt.files; inp.dispatchEvent(new Event('change'));
+      const inp = document.getElementById('videoInput'); inp.files = dt.files; inp.dispatchEvent(new Event('change'));
       return true;
     });
     await p.waitForFunction(() => document.getElementById('modalTitle') && /Δεν βρέθηκαν/.test(document.getElementById('modalTitle').textContent), null, { timeout: 90000 });

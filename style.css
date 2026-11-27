@@ -97,7 +97,8 @@ body.has-route #optimizeBar { display: none; }
 .btn-lg { min-height: 52px; font-size: 17px; }
 .btn-block { display: flex; width: 100%; margin-bottom: 8px; }
 .row-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 12px; }
-.add-row { margin-top: 10px; }
+.add-row { margin-top: 10px; grid-template-columns: 1.25fr 1fr 0.9fr; }
+.add-row .btn { padding-left: 6px; padding-right: 6px; white-space: nowrap; }
 .next-more { margin-top: 10px; }
 .next-more .btn-block { margin-bottom: 8px; }
 .next-more .row-btns { margin: 0; }
