@@ -443,7 +443,9 @@
         const name = (hl[0] && !/\d/.test(hl[0]) && !/παραλαβ|παραδοσ|επιστροφ/i.test(hl[0])) ? hl[0] : '';
         const cnt = hubCounts(hl);
         cards.push({ hub: Object.assign({ kind, name }, cnt), address: '', name: (kind === 'locker' ? 'Locker' : 'Clever Point') + (name ? ' · ' + name : ''),
-          phone: '', pkgs: cnt.deliver || 0, codes: [], closed: true });
+          phone: '', pkgs: cnt.deliver || 0, codes: [],
+          // κομμένη στο κάτω μέρος (π.χ. καρέ βίντεο): φαίνεται μόνο ο τίτλος, χωρίς αριθμούς
+          closed: cnt.deliver != null || cnt.pickup != null || cnt.ret != null });
         return;
       }
       if (RE_PICKUP.test(clean(seg[0]))) {
@@ -531,8 +533,10 @@
         lastOpen = null;
         const lastVideo = !(perImage[imgNo + 1] && perImage[imgNo + 1].video);
         img.cards.forEach((c, i) => {
-          if (i === img.cards.length - 1 && !c.closed && !lastVideo) return;
           const x = { address: c.address, name: c.name, phone: c.phone, pkgs: c.pkgs, codes: c.codes, img: imgNo, video: true };
+          // κομμένη στο κάτω μέρος: κρατιέται ως «μισή» — μετράει μόνο αν δεν φανεί ολόκληρη σε άλλο καρέ
+          // (π.χ. πολύ ψηλή κάρτα που δεν χωράει ποτέ ολόκληρη)
+          if (i === img.cards.length - 1 && !c.closed && !lastVideo) x.partial = true;
           if (c.store) x.store = true;
           if (c.hub) x.hub = c.hub;
           if (c.pickup) x.pickup = c.pickup;
@@ -581,6 +585,9 @@
     // ίδιος κωδικός αποστολής σε διαφορετικά screenshots = η ίδια καρτέλα (κρατάμε την πιο «καθαρή» ανάγνωση)
     const better = (a, b) => (/\d/.test(String(b.address).split(',')[0]) && !/\d/.test(String(a.address).split(',')[0])) ? b : a;
     const uniq = [];
+    // βίντεο: οι «μισές» κάρτες (κομμένες) εξετάζονται τελευταίες και μετράνε μόνο αν δεν ταιριάζουν με ολόκληρη
+    const partials = items.filter((it) => it.partial);
+    items = items.filter((it) => !it.partial);
     items.forEach((it) => {
       const c = it.codes || [];
       // ο ίδιος κωδικός (σχεδόν): πολλοί κωδικοί μοιάζουν (ίδια αρχή «94GOEO…»), γι' αυτό με μικρή διαφορά
@@ -602,11 +609,30 @@
       keep.pkgs = Math.max(keep.pkgs || 0, it.pkgs || 0);
       keep.codes = keep.codes.concat(c.filter((x) => !keep.codes.some((y) => sameCode(x, y))));
     });
+    partials.forEach((it) => {
+      const near = (u) => Math.abs(u.img - it.img) <= 3;
+      const nk = nameKey(it.name), ak = addrKey(it.address);
+      const match = uniq.find((u) => near(u) && !!u.hub === !!it.hub && (
+        (it.hub && u.hub.kind === it.hub.kind && (!it.hub.name || !u.hub.name || lev(nameKey(u.hub.name), nameKey(it.hub.name)) <= 3)) ||
+        (it.phone && u.phone === it.phone) ||
+        (nk.length >= 5 && nameKey(u.name) === nk) ||
+        ((u.codes || []).length && (it.codes || []).length && codesOverlap(u.codes, it.codes)) ||
+        (ak.length >= 6 && addrKey(u.address) === ak)));
+      if (match) return;
+      if (it.hub ? !it.hub.name : !(hasStreet(it.address) && (it.name || it.phone))) return; // πολύ λίγα για να είναι κάρτα
+      uniq.push(Object.assign({}, it));
+    });
     // κομμένη καρτέλα που έμεινε χωρίς οδό, όνομα και τηλέφωνο = σκουπίδι («Λι ςΧνπ« ΝΠπΘν»)
     const hubs = [];
     uniq.filter((it) => it.hub).forEach((it) => {
-      const h = hubs.find((x) => x.hub.kind === it.hub.kind && nameKey(x.hub.name) === nameKey(it.hub.name));
-      if (!h) { hubs.push(Object.assign({}, it, { hub: Object.assign({}, it.hub), cards: 1 })); return; }
+      let h = hubs.find((x) => x.hub.kind === it.hub.kind && nameKey(x.hub.name) === nameKey(it.hub.name));
+      // βίντεο: το ίδιο σημείο σε γειτονικά καρέ, με το όνομα διαβασμένο λίγο αλλιώς ή καθόλου
+      // (όχι αν στο ίδιο καρέ υπάρχει ήδη αυτό το σημείο: τότε είναι δεύτερο, διαφορετικό σημείο με παρόμοιο όνομα)
+      if (!h && it.video) h = hubs.find((x) => x.video && x.hub.kind === it.hub.kind && Math.abs(x.img - it.img) <= 3 && !x.imgs.includes(it.img) &&
+        (!it.hub.name || !x.hub.name || lev(nameKey(x.hub.name), nameKey(it.hub.name)) <= 2));
+      if (h) { h.img = Math.max(h.img, it.img); h.imgs.push(it.img); }
+      if (h && !h.hub.name && it.hub.name) { h.hub.name = it.hub.name; h.name = it.name; }
+      if (!h) { hubs.push(Object.assign({}, it, { hub: Object.assign({}, it.hub), cards: 1, imgs: [it.img] })); return; }
       ['deliver', 'pickup', 'ret'].forEach((k) => { if (it.hub[k] != null) h.hub[k] = Math.max(h.hub[k] || 0, it.hub[k]); });
       h.pkgs = h.hub.deliver || 0;
     });

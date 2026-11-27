@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '98';
+  const APP_VERSION = '99';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -1733,7 +1733,7 @@
       const m = matchExisting(g);
       return Object.assign({}, g, { dup: !!(m && m.dup), mergeInto: m && !m.dup ? m.stop.id : null });
     });
-    reviewFound(items, perImage.some((x) => x && x.depot));
+    reviewFound(items, perImage.some((x) => x && x.depot), fromVideo ? files.filter((f) => videoFrames.has(f)) : null);
   });
 
   // Υπάρχει ήδη στάση στην ίδια διεύθυνση; dup = ίδια δέματα (κωδικοί/ονόματα), αλλιώς θα προστεθούν σε αυτήν
@@ -1790,13 +1790,14 @@
     return pp.map((p) => p.name + (showN ? ` (${p.pkgs || 1})` : '')).join(' · ');
   }
 
-  function reviewFound(items, depot) {
+  function reviewFound(items, depot, frames) {
     if (!items.length) {
       openModal('Δεν βρέθηκαν διευθύνσεις', `<p>Δεν αναγνώρισα διευθύνσεις στην εικόνα.</p>
         <p class="muted small">Βεβαιώσου ότι οι διευθύνσεις φαίνονται καθαρά, ή χρησιμοποίησε «📋 Λίστα διευθύνσεων».</p>`);
       return;
     }
     openModal(`Βρέθηκαν ${items.length} διευθύνσεις`, `
+      ${frames && frames.length ? `<p class="muted small frames-note">Από το βίντεο κράτησα ${frames.length} καρέ. Αν λείπουν κάρτες, <button type="button" class="linkish" id="shareFrames">αποθήκευσέ τα</button> και στείλε τα για έλεγχο.</p>` : ''}
       <div class="tally">
         <div id="tallyTxt" class="tally-txt"></div>
         <div class="tally-q">Τι γράφει η εφαρμογή courier;</div>
@@ -1823,6 +1824,14 @@
         </li>`).join('')}</ul>
       <button class="btn btn-primary btn-block" id="foundGo">Προσθήκη</button>
       <div id="foundLog" class="bulk-log"></div>`, (b) => {
+      const sf = b.querySelector('#shareFrames');
+      if (sf) sf.onclick = async () => {
+        try {
+          if (navigator.canShare && navigator.canShare({ files: frames })) { await navigator.share({ files: frames }); return; }
+        } catch (e) { if (e && e.name === 'AbortError') return; }
+        // χωρίς κοινοποίηση: κατέβασμα ένα-ένα
+        frames.forEach((f, i) => setTimeout(() => { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }, i * 300));
+      };
       const btn = b.querySelector('#foundGo');
       const count = () => items.filter((_, i) => b.querySelector('#fc' + i).checked && b.querySelector('#fa' + i).value.trim()).length;
       // σύνολα για σύγκριση με την εφαρμογή courier

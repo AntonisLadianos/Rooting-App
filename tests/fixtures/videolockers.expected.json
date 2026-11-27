@@ -1,0 +1,89 @@
+[
+ {
+  "address": "Δοκιμαστική 10, Ηρακλειο 71201",
+  "pkgs": 1,
+  "cards": 1,
+  "people": [
+   {
+    "name": "Άννα Δοκιμάκη",
+    "phone": "6900000041",
+    "pkgs": 1
+   }
+  ]
+ },
+ {
+  "address": "Δοκιμαστική 33, Ηρακλειο 71201",
+  "pkgs": 1,
+  "cards": 1,
+  "people": [
+   {
+    "name": "Μαρία Υποθέτου",
+    "phone": "6900000042",
+    "pkgs": 1
+   }
+  ]
+ },
+ {
+  "address": "Ονειρική 12, Ηρακλειο 71201",
+  "pkgs": 1,
+  "cards": 1,
+  "people": [
+   {
+    "name": "Κώστας Φαντάκης",
+    "phone": "6900000043",
+    "pkgs": 1
+   }
+  ]
+ },
+ {
+  "address": "Αόρατη 4, Ηρακλειο 71201",
+  "pkgs": 1,
+  "cards": 1,
+  "people": [
+   {
+    "name": "Σοφία Ψευδή",
+    "phone": "6900000044",
+    "pkgs": 1
+   }
+  ]
+ },
+ {
+  "address": "",
+  "pkgs": 3,
+  "cards": 1,
+  "people": [],
+  "hub": {
+   "kind": "locker",
+   "name": "Test Market (Γάζι)",
+   "deliver": 3,
+   "pickup": 0,
+   "ret": 0
+  }
+ },
+ {
+  "address": "",
+  "pkgs": 5,
+  "cards": 1,
+  "people": [],
+  "hub": {
+   "kind": "locker",
+   "name": "Demo Super Μασταμπάς",
+   "deliver": 5,
+   "pickup": 0,
+   "ret": 0
+  }
+ },
+ {
+  "address": "",
+  "pkgs": 2,
+  "cards": 1,
+  "people": [],
+  "hub": {
+   "kind": "locker",
+   "name": "Fake Store Αλικαρνασσός",
+   "deliver": 2,
+   "pickup": 0,
+   "ret": 0
+  }
+ }
+]

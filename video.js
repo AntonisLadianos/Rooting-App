@@ -113,15 +113,15 @@
       for (let j = last + 1; j < n; j++) {
         const d = pos[j] - pos[last];
         if (cut[j] && j > last) { win.length = 0; win.push(j); break; }
-        if (d >= 0.22 * H && d <= 0.58 * H) win.push(j);
-        if (d > 0.58 * H && win.length) break;
+        if (d >= 0.2 * H && d <= 0.5 * H) win.push(j);
+        if (d > 0.5 * H && win.length) break;
       }
       let next = -1;
       if (win.length) next = win.reduce((b, j) => (score(j, last) < score(b, last) ? j : b), win[0]);
       else {
         // πήγε πολύ γρήγορα: το πρώτο καρέ μετά από 0,22 οθόνης (ή το πιο ακίνητο από τα 3 επόμενα)
         let j = last + 1;
-        while (j < n && pos[j] - pos[last] < 0.22 * H) j++;
+        while (j < n && pos[j] - pos[last] < 0.2 * H) j++;
         if (j >= n) break;
         next = j;
         for (let q = j + 1; q < Math.min(n, j + 3); q++) if (mot[q] < mot[next] && pos[q] - pos[last] < 1.0 * H) next = q;
