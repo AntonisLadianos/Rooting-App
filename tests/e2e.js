@@ -291,9 +291,14 @@ function expect(cond, msg) { if (!cond) throw new Error(msg); }
     await p.click('#btnNavNext'); await p.waitForTimeout(2000);
     await p.ctx.setGeolocation({ latitude: 35.33152, longitude: 25.13382 }); await p.waitForTimeout(2200);
     expect(await p.evaluate(() => RootingNav.arrived()), 'δεν έφτασε');
-    // πέρασε 150 μ πιο κάτω
-    await p.ctx.setGeolocation({ latitude: 35.3302, longitude: 25.1338 }); await p.waitForTimeout(2500);
-    expect(!(await p.evaluate(() => RootingNav.arrived())), 'έμεινε «κολλημένο» στην άφιξη');
+    // ένα «πέταγμα» του GPS 25 μ μακριά (σταματημένος): ΔΕΝ φεύγει από την άφιξη
+    await p.ctx.setGeolocation({ latitude: 35.33128, longitude: 25.13380 }); await p.waitForTimeout(1200);
+    await p.ctx.setGeolocation({ latitude: 35.33151, longitude: 25.13381 }); await p.waitForTimeout(1200);
+    expect(await p.evaluate(() => RootingNav.arrived()), 'έφυγε από την άφιξη με ένα μόνο λάθος στίγμα');
+    // την πέρασε: 22 μ και 30 μ πιο κάτω → φεύγει από το ζουμ ήδη από τα ~20–30 μ
+    await p.ctx.setGeolocation({ latitude: 35.33130, longitude: 25.13381 }); await p.waitForTimeout(1200);
+    await p.ctx.setGeolocation({ latitude: 35.33123, longitude: 25.13380 }); await p.waitForTimeout(2500);
+    expect(!(await p.evaluate(() => RootingNav.arrived())), 'έμεινε «κολλημένο» στην άφιξη (30 μ μετά τη στάση)');
     expect(!/Έφτασες/.test(await p.textContent('#navText')), 'το πάνω μήνυμα έμεινε «Έφτασες»');
     expect(!(await p.$eval('.nav-btns', (e) => e.classList.contains('arrived'))), 'το ✓ πάλλεται ακόμα');
     expect(/Στάση a/.test(await p.textContent('#navDest')), 'άλλαξε προορισμό');

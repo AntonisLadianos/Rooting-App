@@ -454,7 +454,17 @@
     }
     // Πέρασες τη διεύθυνση χωρίς να πατήσεις ✓ (π.χ. δεν βρήκες να παρκάρεις): μόλις απομακρυνθείς,
     // ο χάρτης φεύγει από το ζουμ, σε ακολουθεί ξανά και η διαδρομή ξαναβγαίνει (κύκλος και επιστροφή)
-    if (c.arrived && dist(p, c.dest) > DEPART_M && !(acc > 60)) { depart(); reroute(p); return; }
+    if (c.arrived && !(acc > 60)) {
+      // «έφυγες» = απομακρύνθηκες ~15 μ από το πιο κοντινό σημείο που έφτασες (και είσαι 20+ μ από τη στάση).
+      // Για να μην «φεύγει» με το τρεμόπαιγμα του GPS ενώ είσαι σταματημένος: είτε κινείσαι (> ~9 χλμ/ώρα)
+      // είτε το δείχνουν 2 συνεχόμενα στίγματα.
+      const d = dist(p, c.dest);
+      c.minD = Math.min(c.minD == null ? d : c.minD, d);
+      const away = d > DEPART_M && d > c.minD + 15;
+      c.awayN = away ? (c.awayN || 0) + 1 : 0;
+      // (μετά το «έφυγες», ξαναφτάνεις μόνο αν ξαναπλησιάσεις — αλλιώς στα 20–35 μ θα «ξαναέφτανε» αμέσως)
+      if (away && ((c.speed || 0) > 2.5 || c.awayN >= 2)) { c.rearm = d - 10; depart(); reroute(p); return; }
+    }
     glideTo(target, head);
     if (c.arrived) return; // μετά την άφιξη η οθόνη μένει στο «Έφτασες» (ζουμ στον προορισμό)
 
@@ -507,7 +517,9 @@
 
     // άφιξη
     const toDest = dist(p, c.dest);
-    if (!c.arrived && (toDest < 35 || (remain < 30 && toDest < 80))) arrive();
+    if (c.rearm != null && toDest > 40) c.rearm = null;
+    const lim = c.rearm != null ? Math.min(35, c.rearm) : 35;
+    if (!c.arrived && (toDest < lim || (c.rearm == null && remain < 30 && toDest < 80))) arrive();
   }
 
   // ---------- Ομαλή κίνηση στίγματος/κάμερας ανάμεσα στα στίγματα του GPS (1 ανά δευτερόλεπτο) ----------
@@ -545,7 +557,7 @@
     if (!c.free && !c.arrived) c.mv.follow(c.disp, c.disp.head, c.flat);
   }
 
-  const DEPART_M = 70; // άφιξη στα 35 μ, «έφυγες» στα 70 μ (για να μην τρεμοπαίζει)
+  const DEPART_M = 20; // «έφυγες» όταν περάσεις τη στάση κατά ~15–20 μ (βλ. onPos)
   function depart() {
     const c = cur;
     if (!c || !c.arrived) return;
@@ -557,7 +569,7 @@
 
   function arrive() {
     const c = cur;
-    c.arrived = true;
+    c.arrived = true; c.minD = null; c.awayN = 0;
     queue = queue.filter((q) => q.key == null); say('Έφτασες. ' + (c.dest.speak || (c.dest.title ? c.dest.title.split(',')[0] : '')), true);
     if (navigator.vibrate) navigator.vibrate([60, 80, 60]);
     el('navText').textContent = 'Έφτασες στον προορισμό';
