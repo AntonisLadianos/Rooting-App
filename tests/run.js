@@ -11,8 +11,8 @@ global.window = global;
 (0, eval)(fs.readFileSync(path.join(__dirname, '..', 'ocr.js'), 'utf8'));
 const O = global.RootingOCR;
 
-function pipeline(images) {
-  const per = images.map((im) => O.extractImage(im.text));
+function pipeline(images, video) {
+  const per = images.map((im) => { const r = O.extractImage(im.text); if (video && r && !Array.isArray(r)) r.video = true; return r; });
   const ambig = images.flatMap((im) => im.ambig || []);
   return O.groupCards(O.fixAreas(O.applyAmbig(O.mergeAcross(per), ambig))).map((g) => ({
     address: g.address,
@@ -31,7 +31,7 @@ const update = process.argv.includes('--update');
 let failed = 0;
 fs.readdirSync(dir).filter((f) => f.endsWith('.json') && !f.endsWith('.expected.json')).forEach((f) => {
   const fx = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
-  const got = pipeline(fx.images);
+  const got = pipeline(fx.images, fx.video);
   const expFile = path.join(dir, f.replace(/\.json$/, '.expected.json'));
   if (update || !fs.existsSync(expFile)) { fs.writeFileSync(expFile, JSON.stringify(got, null, 1) + '\n'); console.log(`✎ ${f}: γράφτηκαν ${got.length} αναμενόμενες στάσεις`); return; }
   const exp = JSON.parse(fs.readFileSync(expFile, 'utf8'));

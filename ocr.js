@@ -524,6 +524,22 @@
         });
         return;
       }
+      // Καρέ βίντεο: επικαλύπτονται κατά ~μισή οθόνη, άρα κάθε κάρτα φαίνεται ΟΛΟΚΛΗΡΗ σε κάποιο καρέ.
+      // Δεν «ράβουμε» κομμάτια (το πάνω κομμάτι του επόμενου καρέ ΔΕΝ είναι συνέχεια της κομμένης κάρτας εδώ),
+      // και η κομμένη κάρτα στο κάτω μέρος αγνοείται (εκτός από το τελευταίο καρέ).
+      if (img.video) {
+        lastOpen = null;
+        const lastVideo = !(perImage[imgNo + 1] && perImage[imgNo + 1].video);
+        img.cards.forEach((c, i) => {
+          if (i === img.cards.length - 1 && !c.closed && !lastVideo) return;
+          const x = { address: c.address, name: c.name, phone: c.phone, pkgs: c.pkgs, codes: c.codes, img: imgNo, video: true };
+          if (c.store) x.store = true;
+          if (c.hub) x.hub = c.hub;
+          if (c.pickup) x.pickup = c.pickup;
+          out.push(x);
+        });
+        return;
+      }
       // με καρτέλες
       img.pre.forEach((p) => {
         if (hasStreet(p.address)) {
@@ -573,10 +589,14 @@
       // το τηλέφωνο διαβάζεται σχεδόν πάντα σωστά: διαφορετικό τηλέφωνο = σίγουρα άλλη καρτέλα
       const phoneDiff = (u) => u.phone && it.phone && u.phone !== it.phone;
       const samePhone = (u) => u.phone && it.phone && u.phone === it.phone;
-      const same = c.length ? uniq.find((u) => u.img !== it.img && (u.codes || []).length && codesOverlap(u.codes, c) && !phoneDiff(u) &&
+      let same = c.length ? uniq.find((u) => u.img !== it.img && (u.codes || []).length && codesOverlap(u.codes, c) && !phoneDiff(u) &&
         (close(u) || samePhone(u) || nameKey(u.name) === nameKey(it.name) || addrKey(u.address) === addrKey(it.address))) : null;
+      // βίντεο: η ίδια κάρτα σε γειτονικά καρέ, ακόμα κι αν δεν διαβάστηκε ο κωδικός ή η διεύθυνση διαβάστηκε αλλιώς
+      if (!same && it.video && it.phone) same = uniq.find((u) => u.video && u.img !== it.img && Math.abs(u.img - it.img) <= 3 && samePhone(u) &&
+        !((u.codes || []).length && c.length && !codesOverlap(u.codes, c)) && !uniq.some((w) => w !== u && w.img === u.img && samePhone(w)));
       if (!same) { uniq.push(Object.assign({}, it)); return; }
       const keep = better(same, it) === it ? Object.assign(same, { address: it.address }) : same;
+      keep.img = Math.max(keep.img, it.img); // για τα επόμενα γειτονικά καρέ
       if ((it.name || '').length > (keep.name || '').length && nameKey(it.name).includes(nameKey(keep.name).slice(0, 6))) keep.name = it.name;
       keep.phone = keep.phone || it.phone;
       keep.pkgs = Math.max(keep.pkgs || 0, it.pkgs || 0);
@@ -607,6 +627,16 @@
       // ίδιος πελάτης (όνομα + τηλέφωνο) και ίδιος αριθμός, γραμμένο αλλιώς («ανδρεου παπανδρεου 71» / «Λεωφόρος Ανδρέα Παπανδρέου 71»)
       if (!g && it.phone && num(it.address)) g = groups.find((x) => num(x.address) === num(it.address) &&
         x.people.some((p) => p.phone === it.phone && nameKey(p.name) === nameKey(it.name)));
+      // ίδιο τηλέφωνο = ίδιος πελάτης = ίδια στάση, ακόμα κι αν η διεύθυνση διαβάστηκε αλλιώς («Επινοημένη 7» / «Επινοημενη 1»)
+      // (όχι για καταστήματα: αλυσίδες έχουν ένα τηλέφωνο για πολλά καταστήματα)
+      if (!g && it.phone && !it.store) {
+        g = groups.find((x) => !x.store && x.people.some((p) => p.phone === it.phone && !p.store));
+        if (g && addrKey(it.address) !== g.key) {
+          // κρατάμε την πιο «πλήρη» ανάγνωση διεύθυνσης (με αριθμό, μεγαλύτερη)
+          const score = (a) => (/\d/.test(String(a).split(',')[0]) ? 100 : 0) + String(a).length;
+          if (score(it.address) > score(g.address)) { g.address = it.address; g.key = addrKey(it.address); }
+        }
+      }
       if (!g) {
         groups.push(Object.assign({}, it, { key: k, people: [person], cards: 1 }));
         return;

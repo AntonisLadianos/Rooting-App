@@ -6,7 +6,7 @@
   const PHOTON = 'https://photon.komoot.io';
   const NOMINATIM = 'https://nominatim.openstreetmap.org';
   const STORE_KEY = 'rooting.v1';
-  const APP_VERSION = '97';
+  const APP_VERSION = '98';
   const MAX_MATRIX = 100; // όριο του δημόσιου OSRM server
 
   // iOS (εφαρμογή αρχικής οθόνης): μερικές φορές η σελίδα δεν φτάνει ως το κάτω άκρο της οθόνης.
@@ -1670,6 +1670,7 @@
     if (!files.length) return;
     // Βίντεο (εγγραφή οθόνης): γίνεται λίγα καθαρά καρέ, που διαβάζονται όπως τα screenshots
     let videoGaps = 0, fromVideo = 0;
+    const videoFrames = new Set();
     const isVideo = (f) => /^video\//.test(f.type) || /\.(mov|mp4|m4v|webm)$/i.test(f.name || '');
     if (files.some(isVideo)) {
       const out = [];
@@ -1678,7 +1679,7 @@
           if (!isVideo(f)) { out.push(f); continue; }
           busy(true, 'Κοιτάζω το βίντεο…');
           const r = await RootingVideo.extractFrames(f, (p) => busy(true, `Κοιτάζω το βίντεο… ${Math.round(p * 100)}%`));
-          out.push(...r.files); videoGaps += r.gaps; fromVideo += r.files.length;
+          out.push(...r.files); r.files.forEach((x) => videoFrames.add(x)); videoGaps += r.gaps; fromVideo += r.files.length;
         }
       } catch (err) {
         console.error(err); busy(false);
@@ -1712,7 +1713,11 @@
         }
       };
       await Promise.all(Array.from({ length: lanes }, (_, k) => lane(k)));
-      results.forEach(({ text, ambig }) => { perImage.push(RootingOCR.extractImage(text)); allAmbig.push(...ambig); });
+      results.forEach(({ text, ambig }, i) => {
+        const r = RootingOCR.extractImage(text);
+        if (videoFrames.has(files[i]) && r && !Array.isArray(r)) r.video = true; // καρέ βίντεο: άλλος τρόπος ένωσης (βλ. mergeAcross)
+        perImage.push(r); allAmbig.push(...ambig);
+      });
       if (visionFail) toast('Η ανάγνωση Google δεν δούλεψε (' + String(visionFail).slice(0, 80) + ') — διάβασα στο κινητό');
       if (videoGaps) toast(`Σε ${videoGaps === 1 ? 'ένα σημείο' : videoGaps + ' σημεία'} το βίντεο κύλησε πολύ γρήγορα — έλεγξε τη μέτρηση καρτών (ή ξαναγράψε πιο αργά)`);
     } catch (err) {
